@@ -658,6 +658,70 @@ async function fetchWithGraphQL(
   };
 }
 
+/**
+ * Fetch LOC stats via GraphQL in a single request (much faster than REST)
+ */
+async function fetchLOCViaGraphQL(
+  repos: Array<{ owner: string; name: string; branch: string }>,
+  since: Date,
+  until: Date,
+  authorId: string,
+  token: string
+): Promise<{ additions: number; deletions: number; langLoc: Map<string, number> }> {
+  let totalAdditions = 0;
+  let totalDeletions = 0;
+  const langLoc = new Map<string, number>();
+
+  // Build a single GraphQL query for all repos
+  const queryParts = repos.map((repo, idx) => `
+    repo${idx}: repository(owner: "${repo.owner}", name: "${repo.name}") {
+      ref(qualifiedName: "${repo.branch}") {
+        target {
+          ... on Commit {
+            history(since: "${since.toISOString()}", until: "${until.toISOString()}", author: {id: "${authorId}"}, first: 50) {
+              nodes {
+                additions
+                deletions
+              }
+            }
+          }
+        }
+      }
+    }
+  `);
+
+  try {
+    const response = await fetch(GITHUB_GRAPHQL_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query: `query { ${queryParts.join('\n')} }` }),
+    });
+
+    const result = await response.json();
+    if (!result.data) {
+      console.warn('No LOC data returned');
+      return { additions: 0, deletions: 0, langLoc };
+    }
+
+    // Sum up all additions/deletions from all repos
+    for (let idx = 0; idx < repos.length; idx++) {
+      const repoData = result.data[`repo${idx}`];
+      const commits = repoData?.ref?.target?.history?.nodes || [];
+      for (const commit of commits) {
+        totalAdditions += commit.additions || 0;
+        totalDeletions += commit.deletions || 0;
+      }
+    }
+  } catch (e) {
+    console.error('Error fetching LOC via GraphQL:', e);
+  }
+
+  return { additions: totalAdditions, deletions: totalDeletions, langLoc };
+}
+
 // Map file extensions to language names
 const EXT_TO_LANG: Record<string, string> = {
   'py': 'Python', 'go': 'Go', 'rs': 'Rust', 'js': 'JavaScript',
