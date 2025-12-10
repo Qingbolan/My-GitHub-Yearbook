@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { clearCache, getCacheStats, readCache, resetMemoryCache } from '../services/gistCache'
 
 const currentYear = new Date().getFullYear()
 
@@ -16,7 +17,38 @@ export default function LandingPage() {
   const [token, setToken] = useState(localStorage.getItem('github_token') || '')
   const [showToken, setShowToken] = useState(false)
   const [selected, setSelected] = useState(PRESETS[0].label)
+  const [cacheInfo, setCacheInfo] = useState<{ repoCount: number; commitCount: number; lastUpdated: string | null } | null>(null)
+  const [clearingCache, setClearingCache] = useState(false)
   const navigate = useNavigate()
+
+  // Load cache info when token is available
+  useEffect(() => {
+    if (token) {
+      readCache(token).then(cache => {
+        if (cache) {
+          setCacheInfo(getCacheStats(cache))
+        }
+      }).catch(() => {
+        // Ignore errors
+      })
+    } else {
+      setCacheInfo(null)
+    }
+  }, [token])
+
+  const handleClearCache = async () => {
+    if (!token) return
+    setClearingCache(true)
+    try {
+      await clearCache(token)
+      resetMemoryCache()
+      setCacheInfo(null)
+    } catch (e) {
+      console.error('Failed to clear cache:', e)
+    } finally {
+      setClearingCache(false)
+    }
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -77,16 +109,37 @@ export default function LandingPage() {
               className="text-xs text-[#8b949e] hover:text-white flex items-center gap-1"
             >
               <span>{showToken ? '▼' : '▶'}</span>
-              <span>Token (optional)</span>
+              <span>Token (optional, for private repos)</span>
             </button>
             {showToken && (
-              <input
-                type="password"
-                value={token}
-                onChange={e => setToken(e.target.value)}
-                placeholder="ghp_..."
-                className="w-full mt-2 px-3 py-2 bg-[#0d1117] border border-[#30363d] rounded text-xs text-white font-mono placeholder-[#484f58] focus:border-[#58a6ff] focus:outline-none"
-              />
+              <div className="mt-2 space-y-2">
+                <input
+                  type="password"
+                  value={token}
+                  onChange={e => setToken(e.target.value)}
+                  placeholder="ghp_..."
+                  className="w-full px-3 py-2 bg-[#0d1117] border border-[#30363d] rounded text-xs text-white font-mono placeholder-[#484f58] focus:border-[#58a6ff] focus:outline-none"
+                />
+                <p className="text-[10px] text-[#484f58]">
+                  Required scopes: <code className="text-[#58a6ff]">repo</code>, <code className="text-[#58a6ff]">read:org</code>, <code className="text-[#58a6ff]">gist</code>
+                </p>
+                {cacheInfo && (
+                  <div className="flex items-center justify-between p-2 bg-[#0d1117] border border-[#30363d] rounded">
+                    <div className="text-[10px] text-[#8b949e]">
+                      <span className="text-[#3fb950]">{cacheInfo.commitCount}</span> commits cached from{' '}
+                      <span className="text-[#58a6ff]">{cacheInfo.repoCount}</span> repos
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleClearCache}
+                      disabled={clearingCache}
+                      className="text-[10px] text-[#f85149] hover:underline disabled:opacity-50"
+                    >
+                      {clearingCache ? 'Clearing...' : 'Clear Cache'}
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

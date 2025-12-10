@@ -1,4 +1,11 @@
 import type { Commit } from '../types';
+import {
+  readCache,
+  writeCache,
+  getCachedCommits,
+  updateCacheData,
+  type CommitStats,
+} from './gistCache';
 
 const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
 
@@ -19,7 +26,8 @@ export interface RepoContribution {
 export interface LanguageStats {
   name: string;
   color: string;
-  size: number;
+  size: number;       // bytes (from repo languages)
+  loc: number;        // lines of code (from commits)
   percentage: number;
   repoCount: number;
 }
@@ -134,9 +142,12 @@ async function fetchWithGraphQL(
   const repoMap = new Map<string, RepoContribution>();
   const allReposMap = new Map<string, FullRepoInfo>();
   const langSizeMap = new Map<string, { size: number; color: string; repos: Set<string> }>();
+  const langLocMap = new Map<string, number>(); // LOC per language from commit file stats
   let organizations: Array<{ login: string; avatarUrl: string }> = [];
   let missingScopes: string[] = [];
   let tokenType: 'classic' | 'fine-grained' | 'none' = 'none';
+  let linesAdded = 0;
+  let linesDeleted = 0;
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
@@ -148,6 +159,7 @@ async function fetchWithGraphQL(
     const query = `
       query($from: DateTime!, $to: DateTime!) {
         viewer {
+          id
           login
           avatarUrl
           bio
@@ -204,6 +216,7 @@ async function fetchWithGraphQL(
                 url
                 stargazerCount
                 forkCount
+                defaultBranchRef { name }
                 primaryLanguage {
                   name
                   color
@@ -301,6 +314,7 @@ async function fetchWithGraphQL(
 
     const collection = result.data.viewer.contributionsCollection;
     const viewerLogin = result.data.viewer.login;
+    const viewerId = result.data.viewer.id;
 
     // Log for debugging
     const orgs = result.data.viewer.organizations?.nodes || [];
@@ -425,12 +439,7 @@ async function fetchWithGraphQL(
 
     // Collect repo contributions
     if (collection.commitContributionsByRepository) {
-      // Log repos for debugging
-      const orgRepos = collection.commitContributionsByRepository.filter(
-        (item: { repository: { owner?: { login: string } }; contributions: { totalCount: number } }) =>
-          item?.repository?.owner?.login !== viewerLogin
-      );
-      console.log(`Period ${i + 1} org repos:`, orgRepos.length, 'repos from orgs', orgRepos.map((r: { repository: { nameWithOwner: string }; contributions: { totalCount: number } }) => `${r.repository.nameWithOwner}(${r.contributions?.totalCount || 0})`));
+      const reposToFetchStats: Array<{ owner: string; name: string; branch: string }> = [];
 
       collection.commitContributionsByRepository.forEach((item: {
         repository: {
@@ -441,6 +450,7 @@ async function fetchWithGraphQL(
           url?: string;
           stargazerCount?: number;
           forkCount?: number;
+          defaultBranchRef?: { name: string };
           primaryLanguage?: { name: string; color?: string };
           owner?: { login: string; avatarUrl: string; __typename: string }
         };
@@ -478,7 +488,28 @@ async function fetchWithGraphQL(
             url: item.repository.url,
           });
         }
+
+        // Add to list for fetching stats
+        if (item.repository.owner && item.repository.defaultBranchRef) {
+          reposToFetchStats.push({
+            owner: item.repository.owner.login,
+            name: item.repository.name,
+            branch: item.repository.defaultBranchRef.name
+          });
+        }
       });
+
+      // Fetch commit stats for these repos
+      if (reposToFetchStats.length > 0) {
+        onProgress?.(`Fetching detailed stats for ${reposToFetchStats.length} repositories...`);
+        const stats = await fetchCommitStats(reposToFetchStats, chunk.from, chunk.to, viewerId, token, onProgress);
+        linesAdded += stats.additions;
+        linesDeleted += stats.deletions;
+        // Merge language LOC stats
+        stats.langLoc.forEach((loc, lang) => {
+          langLocMap.set(lang, (langLocMap.get(lang) || 0) + loc);
+        });
+      }
 
       // Process PR contributions for organizations
       collection.pullRequestContributionsByRepository?.forEach((item: { repository: { owner: { login: string; avatarUrl: string; __typename: string } } }) => {
@@ -553,16 +584,47 @@ async function fetchWithGraphQL(
   });
 
   // Build language stats
+  // Prefer actual LOC data from commit file stats if available
   const totalLangSize = Array.from(langSizeMap.values()).reduce((sum, l) => sum + l.size, 0) || 1;
-  const languageStats: LanguageStats[] = Array.from(langSizeMap.entries())
-    .map(([name, data]) => ({
-      name,
-      color: data.color,
-      size: data.size,
-      percentage: (data.size / totalLangSize) * 100,
-      repoCount: data.repos.size,
-    }))
-    .sort((a, b) => b.size - a.size);
+  const totalLangLoc = Array.from(langLocMap.values()).reduce((sum, loc) => sum + loc, 0) || 0;
+  const hasLocData = totalLangLoc > 0;
+
+  // If we have LOC data, build stats from langLocMap; otherwise use langSizeMap
+  let languageStats: LanguageStats[];
+
+  if (hasLocData) {
+    // Use actual LOC data from commit file stats
+    languageStats = Array.from(langLocMap.entries())
+      .map(([name, loc]) => {
+        // Try to get color from langSizeMap, or use default
+        const sizeData = langSizeMap.get(name);
+        return {
+          name,
+          color: sizeData?.color || '#8b949e',
+          size: sizeData?.size || 0,
+          loc,
+          percentage: (loc / totalLangLoc) * 100,
+          repoCount: sizeData?.repos.size || 0,
+        };
+      })
+      .sort((a, b) => b.loc - a.loc);
+  } else {
+    // Fallback: estimate LOC based on repo language size
+    languageStats = Array.from(langSizeMap.entries())
+      .map(([name, data]) => {
+        const percentage = (data.size / totalLangSize) * 100;
+        const estimatedLoc = linesAdded > 0 ? Math.round((data.size / totalLangSize) * linesAdded) : 0;
+        return {
+          name,
+          color: data.color,
+          size: data.size,
+          loc: estimatedLoc,
+          percentage,
+          repoCount: data.repos.size,
+        };
+      })
+      .sort((a, b) => b.size - a.size);
+  }
 
   const allRepos = Array.from(allReposMap.values())
     .sort((a, b) => b.commits - a.commits || new Date(b.pushedAt).getTime() - new Date(a.pushedAt).getTime());
@@ -577,8 +639,8 @@ async function fetchWithGraphQL(
     pullRequests: totalPRs,
     pullRequestReviews: totalReviews,
     issues: totalIssues,
-    linesAdded: 0,
-    linesDeleted: 0,
+    linesAdded,
+    linesDeleted,
     followers: userInfo.followers,
     following: userInfo.following,
     publicRepos: userInfo.publicRepos,
@@ -595,6 +657,202 @@ async function fetchWithGraphQL(
     missingScopes,
     tokenType,
   };
+}
+
+// Map file extensions to language names
+const EXT_TO_LANG: Record<string, string> = {
+  'py': 'Python', 'go': 'Go', 'rs': 'Rust', 'js': 'JavaScript',
+  'ts': 'TypeScript', 'tsx': 'TypeScript', 'jsx': 'JavaScript',
+  'sh': 'Shell', 'bash': 'Shell', 'zsh': 'Shell',
+  'md': 'Markdown', 'mdx': 'Markdown',
+  'cpp': 'C++', 'cc': 'C++', 'cxx': 'C++', 'hpp': 'C++',
+  'c': 'C', 'h': 'C',
+  'java': 'Java', 'kt': 'Kotlin',
+  'html': 'HTML', 'htm': 'HTML',
+  'css': 'CSS', 'scss': 'SCSS', 'sass': 'Sass', 'less': 'Less',
+  'json': 'JSON', 'yaml': 'YAML', 'yml': 'YAML',
+  'rb': 'Ruby', 'php': 'PHP', 'swift': 'Swift', 'dart': 'Dart',
+  'cs': 'C#', 'scala': 'Scala', 'vue': 'Vue', 'svelte': 'Svelte',
+  'ipynb': 'Jupyter Notebook', 'sql': 'SQL', 'graphql': 'GraphQL',
+};
+
+function getLanguageFromFile(filename: string): string | null {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  if (!ext) return null;
+  return EXT_TO_LANG[ext] || null;
+}
+
+async function fetchCommitStats(
+  repos: Array<{ owner: string; name: string; branch: string }>,
+  since: Date,
+  until: Date,
+  authorId: string,
+  token: string,
+  onProgress?: (message: string) => void
+): Promise<{ additions: number; deletions: number; langLoc: Map<string, number> }> {
+  let totalAdditions = 0;
+  let totalDeletions = 0;
+  const langLoc = new Map<string, number>();
+
+  // Try to read cache
+  let cache = await readCache(token);
+  if (!cache) {
+    cache = {
+      version: '1.0',
+      userId: authorId,
+      username: '',
+      lastUpdated: new Date().toISOString(),
+      commits: {},
+    };
+  }
+
+  let cacheHits = 0;
+  let cacheMisses = 0;
+  let cacheUpdated = false;
+
+  // Process in batches to avoid query complexity limits
+  const BATCH_SIZE = 2;
+  for (let i = 0; i < repos.length; i += BATCH_SIZE) {
+    const batch = repos.slice(i, i + BATCH_SIZE);
+
+    // Add a small delay between batches to avoid rate limiting
+    if (i > 0) await new Promise(resolve => setTimeout(resolve, 500));
+
+    // First, get commit hashes via GraphQL
+    const queryParts = batch.map((repo, idx) => `
+      repo${idx}: repository(owner: "${repo.owner}", name: "${repo.name}") {
+        ref(qualifiedName: "${repo.branch}") {
+          target {
+            ... on Commit {
+              history(since: "${since.toISOString()}", until: "${until.toISOString()}", author: {id: "${authorId}"}, first: 100) {
+                nodes {
+                  oid
+                  additions
+                  deletions
+                }
+              }
+            }
+          }
+        }
+      }
+    `);
+
+    const query = `query { ${queryParts.join('\n')} }`;
+
+    try {
+      const response = await fetch(GITHUB_GRAPHQL_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query }),
+      });
+
+      const result = await response.json();
+      if (!result.data) continue;
+
+      // Process each repo in the batch
+      for (let idx = 0; idx < batch.length; idx++) {
+        const repo = batch[idx];
+        const repoFullName = `${repo.owner}/${repo.name}`;
+        const repoData = result.data[`repo${idx}`];
+        const commits = repoData?.ref?.target?.history?.nodes || [];
+        const cachedRepoCommits = getCachedCommits(cache, repoFullName);
+
+        for (const commit of commits) {
+          const commitHash = commit.oid;
+
+          // Check cache first
+          if (cachedRepoCommits[commitHash]) {
+            const cached = cachedRepoCommits[commitHash];
+            totalAdditions += cached.additions;
+            totalDeletions += cached.deletions;
+
+            // Accumulate language LOC from cached data
+            for (const file of cached.files) {
+              const lang = getLanguageFromFile(file.filename);
+              if (lang) {
+                langLoc.set(lang, (langLoc.get(lang) || 0) + file.additions);
+              }
+            }
+
+            cacheHits++;
+            continue;
+          }
+
+          // Cache miss - need to fetch from REST API
+          cacheMisses++;
+
+          try {
+            const commitResponse = await fetch(
+              `https://api.github.com/repos/${repoFullName}/commits/${commitHash}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Accept': 'application/vnd.github.v3+json',
+                },
+              }
+            );
+
+            if (commitResponse.ok) {
+              const commitData = await commitResponse.json();
+              const files = commitData.files || [];
+
+              const commitStats: CommitStats = {
+                additions: commitData.stats?.additions || 0,
+                deletions: commitData.stats?.deletions || 0,
+                files: files.map((f: { filename: string; additions: number; deletions: number }) => ({
+                  filename: f.filename,
+                  additions: f.additions || 0,
+                  deletions: f.deletions || 0,
+                })),
+              };
+
+              totalAdditions += commitStats.additions;
+              totalDeletions += commitStats.deletions;
+
+              // Accumulate language LOC
+              for (const file of commitStats.files) {
+                const lang = getLanguageFromFile(file.filename);
+                if (lang) {
+                  langLoc.set(lang, (langLoc.get(lang) || 0) + file.additions);
+                }
+              }
+
+              // Update cache
+              updateCacheData(cache, repoFullName, commitHash, commitStats);
+              cacheUpdated = true;
+            } else {
+              // Fallback to GraphQL data
+              totalAdditions += commit.additions || 0;
+              totalDeletions += commit.deletions || 0;
+            }
+          } catch (e) {
+            // Fallback to GraphQL data on error
+            totalAdditions += commit.additions || 0;
+            totalDeletions += commit.deletions || 0;
+          }
+
+          // Small delay between REST API calls
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+
+      onProgress?.(`Processing commits... (${cacheHits} cached, ${cacheMisses} fetched)`);
+    } catch (e) {
+      console.error('Error fetching commit stats batch:', e);
+    }
+  }
+
+  // Save cache asynchronously (don't block return)
+  if (cacheUpdated) {
+    writeCache(token, cache).catch(e => console.error('Failed to save cache:', e));
+  }
+
+  console.log(`Commit stats: ${cacheHits} cache hits, ${cacheMisses} cache misses`);
+
+  return { additions: totalAdditions, deletions: totalDeletions, langLoc };
 }
 
 async function fetchWithRestAPI(

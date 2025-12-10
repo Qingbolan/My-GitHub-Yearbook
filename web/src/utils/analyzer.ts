@@ -1,7 +1,7 @@
 import type { AppData, Commit, SummaryStats, TimelineItem, ProjectItem, KeywordItem } from '../types';
 
 export class Analyzer {
-    private commits: Commit[];
+    public commits: Commit[];
 
     constructor(commits: Commit[]) {
         this.commits = commits;
@@ -29,13 +29,22 @@ export class Analyzer {
         const repos = new Set(this.commits.map(c => c.repo));
         const total_repos = repos.size;
 
+        let total_lines_added = 0;
+        let total_lines_deleted = 0;
+        this.commits.forEach(c => {
+            total_lines_added += c.insertions;
+            total_lines_deleted += c.deletions;
+        });
+
         if (total_commits === 0) {
             return {
                 total_commits: 0,
                 total_repos: 0,
                 top_repo: 'N/A',
                 peak_month: 'N/A',
-                text: 'No commits found for this criteria.'
+                text: 'No commits found for this criteria.',
+                total_lines_added: 0,
+                total_lines_deleted: 0
             };
         }
 
@@ -60,7 +69,9 @@ export class Analyzer {
             total_repos,
             top_repo,
             peak_month,
-            text: `In ${this.commits[0]?.date.substring(0, 4) || 'selected period'}, I made ${total_commits} commits across ${total_repos} repositories. ${top_repo} was my main focus. ${peak_month} was my peak month.`
+            text: `In ${this.commits[0]?.date.substring(0, 4) || 'selected period'}, I made ${total_commits} commits across ${total_repos} repositories. ${top_repo} was my main focus. ${peak_month} was my peak month.`,
+            total_lines_added,
+            total_lines_deleted
         };
     }
 
@@ -96,19 +107,37 @@ export class Analyzer {
             '.json': 'JSON', '.yaml': 'YAML', '.yml': 'YAML'
         };
 
-        const langCounts: Record<string, number> = {};
+        const langStats: Record<string, number> = {};
 
         this.commits.forEach(c => {
-            c.files.forEach(file => {
-                const ext = '.' + file.split('.').pop();
-                if (extMap[ext]) {
-                    const lang = extMap[ext];
-                    langCounts[lang] = (langCounts[lang] || 0) + 1;
-                }
-            });
+            if (c.file_stats) {
+                // Use per-file stats if available
+                Object.entries(c.file_stats).forEach(([file, stats]) => {
+                    const ext = '.' + file.split('.').pop();
+                    if (extMap[ext]) {
+                        const lang = extMap[ext];
+                        // Sum of insertions + deletions as "activity" or just insertions?
+                        // Usually LOC refers to lines added, but activity is both.
+                        // Let's use insertions for "LOC" contribution, or sum.
+                        // The user asked for "code line statistics", usually means volume of code written.
+                        // I'll use insertions + deletions as a measure of activity, or just insertions.
+                        // Let's use insertions for now as it represents "new code".
+                        langStats[lang] = (langStats[lang] || 0) + stats.insertions;
+                    }
+                });
+            } else {
+                // Fallback to file counts if no file_stats
+                c.files.forEach(file => {
+                    const ext = '.' + file.split('.').pop();
+                    if (extMap[ext]) {
+                        const lang = extMap[ext];
+                        langStats[lang] = (langStats[lang] || 0) + 1;
+                    }
+                });
+            }
         });
 
-        return langCounts;
+        return langStats;
     }
 
     getKeywords(topN: number = 50): KeywordItem[] {

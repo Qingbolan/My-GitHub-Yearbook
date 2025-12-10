@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>GitHub Yearbook</title>
+  <script>
+    // GitHub Pages SPA redirect script
+    // Redirects 404 requests to index.html with path preserved as query parameter
+    (function() {
+      var path = window.location.pathname;
+      var search = window.location.search;
+      var hash = window.location.hash;
+
+      // Get the base path (repo name) from the URL
+      // e.g., /My-GitHub-Yearbook/yearbook/user/... -> basePath = /My-GitHub-Yearbook/
+      var segments = path.split('/').filter(Boolean);
+      var basePath = '/' + (segments[0] || '') + '/';
+
+      // Get the relative path after the base
+      var relativePath = '/' + segments.slice(1).join('/');
+
+      // Only redirect if we have a path beyond the base
+      if (segments.length > 1) {
+        var redirectUrl = basePath + '?redirect=' + encodeURIComponent(relativePath + search + hash);
+        window.location.replace(redirectUrl);
+      } else {
+        // No sub-path, just go to root
+        window.location.replace(basePath);
+      }
+    })();
+  </script>
+</head>
+<body>
+  <noscript>
+    <p>JavaScript is required. Redirecting...</p>
+    <a href="/">Go to homepage</a>
+  </noscript>
+</body>
+</html>

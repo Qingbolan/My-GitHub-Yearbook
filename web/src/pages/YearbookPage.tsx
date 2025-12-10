@@ -109,6 +109,8 @@ export default function YearbookPage() {
       publicRepos,
       missingScopes: data.missingScopes,
       tokenType: data.tokenType,
+      linesAdded: data.linesAdded,
+      linesDeleted: data.linesDeleted,
     }
   }, [data, end])
 
@@ -152,6 +154,21 @@ export default function YearbookPage() {
   const otherLangs = stats.languageStats.slice(8)
   const otherSize = otherLangs.reduce((s, l) => s + l.size, 0)
   const totalSize = stats.languageStats.reduce((s, l) => s + l.size, 0) || 1
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  const formatLoc = (loc: number) => {
+    if (loc === 0) return '0';
+    if (loc >= 1000000) return (loc / 1000000).toFixed(1) + 'M';
+    if (loc >= 1000) return (loc / 1000).toFixed(1) + 'k';
+    return loc.toString();
+  };
 
   return (
     <div className="min-h-screen bg-[#0d1117] p-4 md:p-6">
@@ -239,8 +256,8 @@ export default function YearbookPage() {
           <StatCell label="Reviews" value={String(stats.reviews)} color="#f0883e" />
           <StatCell label="Issues" value={String(stats.issues)} color="#3fb950" />
           <StatCell label="Repos" value={`${stats.publicRepoCount}+${stats.privateRepoCount}`} color="#58a6ff" sub="pub+priv" />
-          <StatCell label="Stars" value={stats.stars.toLocaleString()} color="#f0c14b" />
-          <StatCell label="Forks" value={stats.forks.toLocaleString()} color="#8b949e" />
+          <StatCell label="LOC Added" value={stats.linesAdded ? (stats.linesAdded / 1000).toFixed(1) + 'k' : '-'} color="#3fb950" />
+          <StatCell label="LOC Deleted" value={stats.linesDeleted ? (stats.linesDeleted / 1000).toFixed(1) + 'k' : '-'} color="#f85149" />
           <StatCell label="Best Streak" value={`${stats.longest}d`} color="#f97316" />
           <StatCell label="Active Days" value={String(stats.activeDays)} color="#3fb950" />
         </div>
@@ -281,6 +298,8 @@ export default function YearbookPage() {
                 <Row label="Current Streak" value={`${stats.current} days`} />
                 <Row label="Avg per Day" value={`${stats.avgPerDay}`} />
                 {stats.maxDayEntry && <Row label="Best Day" value={`${stats.maxDayEntry.date} (${stats.maxDayEntry.count})`} />}
+                {stats.linesAdded > 0 && <Row label="Total LOC Added" value={stats.linesAdded.toLocaleString()} />}
+                {stats.linesDeleted > 0 && <Row label="Total LOC Deleted" value={stats.linesDeleted.toLocaleString()} />}
                 {stats.organizations.length > 0 && (
                   <div className="flex justify-between items-center">
                     <span className="text-[#8b949e]">Organizations</span>
@@ -303,7 +322,7 @@ export default function YearbookPage() {
 
           {/* Middle: Full Tech Stack */}
           <div className="p-4 space-y-4">
-            <Section title={`Tech Stack (${stats.languageStats.length} Languages)`}>
+            <Section title={`Tech Stack (${stats.languageStats.length} Languages) ${stats.linesAdded > 0 ? '(by LOC)' : '(by Size)'}`}>
               {/* Stacked bar */}
               <div className="h-4 rounded-full overflow-hidden flex mb-3">
                 {topLangs.map(lang => (
@@ -336,27 +355,33 @@ export default function YearbookPage() {
               )}
             </Section>
 
-            {/* Language by Repo Count */}
-            <Section title="Language Usage (by Repos)">
-              <div className="space-y-1">
-                {stats.languageStats.slice(0, 6).map(lang => (
-                  <div key={lang.name} className="flex items-center gap-2 text-xs">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lang.color }} />
-                    <span className="text-[#c9d1d9] w-20 truncate">{lang.name}</span>
-                    <div className="flex-1 h-2 bg-[#161b22] rounded overflow-hidden">
+            {/* Language Usage Section */}
+            <div className="bg-[#161b22] rounded-xl border border-[#30363d] p-6">
+              <h3 className="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider">
+                Language Usage {stats.languageStats[0]?.loc > 0 ? '(LOC Added)' : '(by Size)'}
+              </h3>
+              <div className="space-y-4">
+                {stats.languageStats.slice(0, 6).map((lang) => (
+                  <div key={lang.name} className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="font-medium text-gray-200">{lang.name}</span>
+                      <span className="text-gray-400">
+                        {lang.loc > 0 ? formatLoc(lang.loc) + ' lines' : formatBytes(lang.size)}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-[#30363d] rounded-full overflow-hidden">
                       <div
-                        className="h-full"
+                        className="h-full rounded-full transition-all duration-1000 ease-out"
                         style={{
-                          width: `${(lang.repoCount / Math.max(...stats.languageStats.map(l => l.repoCount), 1)) * 100}%`,
-                          backgroundColor: lang.color
+                          width: `${lang.percentage}%`,
+                          backgroundColor: lang.color || '#8b949e'
                         }}
                       />
                     </div>
-                    <span className="text-[#8b949e] w-12 text-right">{lang.repoCount} repos</span>
                   </div>
                 ))}
               </div>
-            </Section>
+            </div>
           </div>
 
           {/* Right: Repositories */}
