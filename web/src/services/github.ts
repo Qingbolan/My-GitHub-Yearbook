@@ -501,8 +501,10 @@ async function fetchWithGraphQL(
 
       // Fetch commit stats for these repos
       if (reposToFetchStats.length > 0) {
+        console.log('Repos to fetch stats:', reposToFetchStats.map(r => `${r.owner}/${r.name}`));
         onProgress?.(`Fetching detailed stats for ${reposToFetchStats.length} repositories...`);
         const stats = await fetchCommitStats(reposToFetchStats, chunk.from, chunk.to, viewerId, token, onProgress);
+        console.log('Commit stats result:', { additions: stats.additions, deletions: stats.deletions });
         linesAdded += stats.additions;
         linesDeleted += stats.deletions;
         // Merge language LOC stats
@@ -712,8 +714,11 @@ async function fetchCommitStats(
 
   // Process in batches to avoid query complexity limits
   const BATCH_SIZE = 2;
+  console.log(`Starting to fetch commit stats for ${repos.length} repos in batches of ${BATCH_SIZE}`);
+
   for (let i = 0; i < repos.length; i += BATCH_SIZE) {
     const batch = repos.slice(i, i + BATCH_SIZE);
+    console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(repos.length / BATCH_SIZE)}:`, batch.map(r => `${r.owner}/${r.name}`));
 
     // Add a small delay between batches to avoid rate limiting
     if (i > 0) await new Promise(resolve => setTimeout(resolve, 500));
@@ -750,7 +755,11 @@ async function fetchCommitStats(
       });
 
       const result = await response.json();
-      if (!result.data) continue;
+      console.log('GraphQL batch response:', result.errors ? 'has errors' : 'ok', result.errors || '');
+      if (!result.data) {
+        console.warn('No data in GraphQL response, skipping batch');
+        continue;
+      }
 
       // Process each repo in the batch
       for (let idx = 0; idx < batch.length; idx++) {
