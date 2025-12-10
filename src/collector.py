@@ -12,7 +12,21 @@ class DataCollector:
         self.config = config
         self.start_date = datetime.strptime(config['start_date'], "%Y-%m-%d").replace(tzinfo=timezone.utc)
         self.end_date = datetime.strptime(config['end_date'], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        self.username = config.get('github_username', '').lower()
         self.commits = []
+
+    def _is_author_match(self, author_name, author_email=None):
+        """Check if the commit author matches the configured username."""
+        if not self.username:
+            return True  # No filter if username not set
+
+        author_name_lower = author_name.lower() if author_name else ''
+        author_email_lower = author_email.lower() if author_email else ''
+
+        # Match by username in name or email
+        return (self.username in author_name_lower or
+                self.username in author_email_lower or
+                author_name_lower in ['silan hu', 'silan.hu', 'qingbolan', 'silan'])
 
     def collect_all(self):
         self.collect_local()
@@ -34,13 +48,29 @@ class DataCollector:
                 for commit in repo.iter_commits():
                     commit_date = datetime.fromtimestamp(commit.committed_date, tz=timezone.utc)
                     if self.start_date <= commit_date <= self.end_date:
+                        author_name = commit.author.name
+                        author_email = commit.author.email if commit.author.email else ''
+
+                        # Only include commits by the configured user
+                        if not self._is_author_match(author_name, author_email):
+                            continue
+
+                        # Collect per-file stats
+                        file_stats = {}
+                        for file_path, stats in commit.stats.files.items():
+                            file_stats[file_path] = {
+                                'insertions': stats['insertions'],
+                                'deletions': stats['deletions']
+                            }
+
                         self.commits.append({
                             'repo': repo_name,
                             'hash': commit.hexsha,
                             'date': commit_date,
-                            'author': commit.author.name,
+                            'author': author_name,
                             'message': commit.message.strip(),
                             'files': list(commit.stats.files.keys()),
+                            'file_stats': file_stats,
                             'insertions': commit.stats.total['insertions'],
                             'deletions': commit.stats.total['deletions'],
                             'source': 'local'
@@ -66,21 +96,32 @@ class DataCollector:
                     continue
                 
                 try:
-                    commits = repo.get_commits(since=self.start_date, until=self.end_date, author=user)
+                    # Get commits in date range, filter by author
+                    commits = repo.get_commits(since=self.start_date, until=self.end_date)
                     for commit in commits:
-                        # Avoid duplicates if we already scanned this locally
-                        # Simple check by hash (though local/remote hashes usually match if synced)
-                        # For now, just add and we can dedupe later
+                        author_name = commit.commit.author.name if commit.commit.author else ''
+                        author_email = commit.commit.author.email if commit.commit.author else ''
+
+                        # Only include commits by the configured user
+                        if not self._is_author_match(author_name, author_email):
+                            continue
+
+                        # Collect per-file stats
+                        file_stats = {}
+                        for f in commit.files:
+                            file_stats[f.filename] = {
+                                'insertions': f.additions,
+                                'deletions': f.deletions
+                            }
+
                         self.commits.append({
                             'repo': repo.name,
                             'hash': commit.sha,
                             'date': commit.commit.author.date.replace(tzinfo=timezone.utc),
-                            'author': commit.commit.author.name,
+                            'author': author_name,
                             'message': commit.commit.message,
-                            'files': [f.filename for f in commit.files], # This requires an extra API call per commit usually, but PyGithub objects might load it lazily. 
-                            # Note: commit.files triggers a request. Be careful with rate limits.
-                            # For summary, maybe we don't need full file list if it's too slow.
-                            # Let's keep it for now but be aware.
+                            'files': [f.filename for f in commit.files],
+                            'file_stats': file_stats,
                             'insertions': commit.stats.additions,
                             'deletions': commit.stats.deletions,
                             'source': 'remote'

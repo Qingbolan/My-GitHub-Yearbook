@@ -5,7 +5,7 @@ class ReportGenerator:
     def __init__(self, output_dir="outputs"):
         self.output_dir = output_dir
 
-    def generate_html(self, stats, summary_text):
+    def generate_html(self, stats, summary_text, start_date, end_date):
         template_str = """
         <!DOCTYPE html>
         <html>
@@ -29,7 +29,7 @@ class ReportGenerator:
         </head>
         <body>
             <h1>GitHub Yearbook</h1>
-            <div class="subtitle">2024/08/01 – 2025/11/04</div>
+            <div class="subtitle">{{ start_date }} – {{ end_date }}</div>
 
             <div class="summary-card">
                 <div class="summary-text">
@@ -81,7 +81,7 @@ class ReportGenerator:
         """
         
         template = Template(template_str)
-        html_content = template.render(stats=stats, summary_text=summary_text)
+        html_content = template.render(stats=stats, summary_text=summary_text, start_date=start_date, end_date=end_date)
         
         with open(os.path.join(self.output_dir, 'yearbook.html'), 'w') as f:
             f.write(html_content)

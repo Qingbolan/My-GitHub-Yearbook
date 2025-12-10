@@ -1,5 +1,8 @@
 # GitHub Yearbook Configuration
 
+# User Settings
+github_username: "Qingbolan" # Your GitHub username for filtering commits
+
 # Date Range
 start_date: "2024-08-01"
 end_date: "2025-11-04"
@@ -9,8 +12,50 @@ github_token_env: "GITHUB_TOKEN"  # Name of the env var containing the token
 
 # Local Repositories to scan (absolute paths)
 local_repos:
+  - "/Users/macbook.silan.tech/Documents/GitHub/aal-silan"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Ad-LLM-stream"
+  - "/Users/macbook.silan.tech/Documents/GitHub/AdvBench"
+  - "/Users/macbook.silan.tech/Documents/GitHub/AdvBench-dataset"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Advocate-stream"
+  - "/Users/macbook.silan.tech/Documents/GitHub/ai-cli-framework"
+  - "/Users/macbook.silan.tech/Documents/GitHub/BrainCellCoding"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Community"
+  - "/Users/macbook.silan.tech/Documents/GitHub/COS-platform"
+  - "/Users/macbook.silan.tech/Documents/GitHub/cs5340"
+  - "/Users/macbook.silan.tech/Documents/GitHub/demo"
+  - "/Users/macbook.silan.tech/Documents/GitHub/drawdb"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Easy-Image"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Easy-notebook-advance"
+  - "/Users/macbook.silan.tech/Documents/GitHub/EasyPaper"
+  - "/Users/macbook.silan.tech/Documents/GitHub/EasyRemote"
+  - "/Users/macbook.silan.tech/Documents/GitHub/FYP-Mcomp"
+  - "/Users/macbook.silan.tech/Documents/GitHub/GEM-Bench"
+  - "/Users/macbook.silan.tech/Documents/GitHub/GEM-Bench-Leadboard"
+  - "/Users/macbook.silan.tech/Documents/GitHub/gemini-cli"
+  - "/Users/macbook.silan.tech/Documents/GitHub/GEOscope"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Human-Alignment-Data-Analysis"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Human-Label-System"
+  - "/Users/macbook.silan.tech/Documents/GitHub/llmesh-app"
   - "/Users/macbook.silan.tech/Documents/GitHub/My-GitHub-Yearbook"
-  # Add more paths here
+  - "/Users/macbook.silan.tech/Documents/GitHub/note-gen"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Notebook-BCC"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Notebook-Frontend"
+  - "/Users/macbook.silan.tech/Documents/GitHub/NoteMark"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Open-reviewer"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Open-Sora-Data"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Paper-latex"
+  - "/Users/macbook.silan.tech/Documents/GitHub/phd-application"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Print-SoC"
+  - "/Users/macbook.silan.tech/Documents/GitHub/prod-backend"
+  - "/Users/macbook.silan.tech/Documents/GitHub/prod-frontend"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Runtime"
+  - "/Users/macbook.silan.tech/Documents/GitHub/Silan-Personal-Website"
+  - "/Users/macbook.silan.tech/Documents/GitHub/silan-tui"
+  - "/Users/macbook.silan.tech/Documents/GitHub/union-upgrade"
+  - "/Users/macbook.silan.tech/Documents/GitHub/VDS-BC"
+  - "/Users/macbook.silan.tech/Documents/GitHub/VDSAgents"
+  - "/Users/macbook.silan.tech/Documents/GitHub/VDSAgents-Backend"
+  - "/Users/macbook.silan.tech/Documents/GitHub/VLDB-Toolkits"
 
 # Output Settings
 output_dir: "outputs"
