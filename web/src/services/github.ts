@@ -499,14 +499,12 @@ async function fetchWithGraphQL(
         }
       });
 
-      // Fetch commit stats for these repos
-      // TODO: Re-enable when backend cache is ready
-      // For now, skip detailed stats to make page load faster
-      if (reposToFetchStats.length > 0 && false) { // Disabled temporarily
-        console.log('Repos to fetch stats:', reposToFetchStats.map(r => `${r.owner}/${r.name}`));
-        onProgress?.(`Fetching detailed stats for ${reposToFetchStats.length} repositories...`);
-        const stats = await fetchCommitStats(reposToFetchStats, chunk.from, chunk.to, viewerId, token, onProgress);
-        console.log('Commit stats result:', { additions: stats.additions, deletions: stats.deletions });
+      // Fetch commit stats for top repos only (limit to avoid long loading)
+      if (reposToFetchStats.length > 0) {
+        // Only fetch stats for top 5 repos to keep loading fast
+        const topRepos = reposToFetchStats.slice(0, 5);
+        onProgress?.(`Fetching stats for top ${topRepos.length} repositories...`);
+        const stats = await fetchCommitStats(topRepos, chunk.from, chunk.to, viewerId, token, onProgress);
         linesAdded += stats.additions;
         linesDeleted += stats.deletions;
         // Merge language LOC stats
@@ -725,13 +723,13 @@ async function fetchCommitStats(
     // Add a small delay between batches to avoid rate limiting
     if (i > 0) await new Promise(resolve => setTimeout(resolve, 500));
 
-    // First, get commit hashes via GraphQL
+    // First, get commit hashes via GraphQL (limit to 20 per repo for speed)
     const queryParts = batch.map((repo, idx) => `
       repo${idx}: repository(owner: "${repo.owner}", name: "${repo.name}") {
         ref(qualifiedName: "${repo.branch}") {
           target {
             ... on Commit {
-              history(since: "${since.toISOString()}", until: "${until.toISOString()}", author: {id: "${authorId}"}, first: 100) {
+              history(since: "${since.toISOString()}", until: "${until.toISOString()}", author: {id: "${authorId}"}, first: 20) {
                 nodes {
                   oid
                   additions
@@ -797,7 +795,10 @@ async function fetchCommitStats(
           cacheMisses++;
 
           try {
-            console.log(`Fetching commit ${commitHash.slice(0, 7)} from ${repoFullName}...`);
+            // Add timeout to prevent hanging
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
             const commitResponse = await fetch(
               `https://api.github.com/repos/${repoFullName}/commits/${commitHash}`,
               {
@@ -805,9 +806,10 @@ async function fetchCommitStats(
                   'Authorization': `Bearer ${token}`,
                   'Accept': 'application/vnd.github.v3+json',
                 },
+                signal: controller.signal,
               }
             );
-            console.log(`Commit response: ${commitResponse.status}`);
+            clearTimeout(timeoutId);
 
             if (commitResponse.ok) {
               const commitData = await commitResponse.json();
