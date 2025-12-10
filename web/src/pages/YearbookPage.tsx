@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { fetchUserContributions, type ContributionData } from '../services/github'
+import VisitorMap from '../components/VisitorMap'
 
 export default function YearbookPage() {
   const { username, start, end } = useParams<{ username: string; start: string; end: string }>()
@@ -402,6 +403,11 @@ export default function YearbookPage() {
         <code className="block p-2 bg-[#161b22] border border-[#30363d] rounded text-[10px] text-[#8b949e] overflow-x-auto font-mono">
           {`[![${username}'s ${year} GitHub Stats](${location.origin}/api/card/${username}/${start}/${end})](${location.href})`}
         </code>
+      </div>
+
+      {/* Visitor Map */}
+      <div className="max-w-5xl mx-auto mt-6">
+        <VisitorMap />
       </div>
     </div >
   )

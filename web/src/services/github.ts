@@ -549,23 +549,24 @@ async function fetchWithGraphQL(
 
   onProgress?.(`Found ${totalCommits} commits across ${repositoryContributions.length} repositories`);
 
+  // TODO: Commit objects creation temporarily disabled
   // Create commit-like objects
   const commits: Commit[] = [];
-  repositoryContributions.forEach(repo => {
-    for (let i = 0; i < Math.min(repo.count, 100); i++) {
-      commits.push({
-        repo: repo.repo,
-        hash: `${repo.repo}-${i}`,
-        date: startDate,
-        author: username,
-        message: '',
-        files: [],
-        insertions: 0,
-        deletions: 0,
-        source: 'github',
-      });
-    }
-  });
+  // repositoryContributions.forEach(repo => {
+  //   for (let i = 0; i < Math.min(repo.count, 100); i++) {
+  //     commits.push({
+  //       repo: repo.repo,
+  //       hash: `${repo.repo}-${i}`,
+  //       date: startDate,
+  //       author: username,
+  //       message: '',
+  //       files: [],
+  //       insertions: 0,
+  //       deletions: 0,
+  //       source: 'github',
+  //     });
+  //   }
+  // });
 
   // Update allRepos with commit counts from this period
   repositoryContributions.forEach(rc => {
@@ -722,6 +723,7 @@ async function fetchWithRestAPI(
     return eventDate >= start && eventDate <= end;
   });
 
+  // TODO: Commit aggregation temporarily disabled
   // Aggregate commits
   const commits: Commit[] = [];
   const dailyMap = new Map<string, number>();
@@ -738,20 +740,20 @@ async function fetchWithRestAPI(
     // Repo
     repoMap.set(repoName, (repoMap.get(repoName) || 0) + commitCount);
 
-    // Create commit entries
-    event.payload.commits?.forEach((c: { sha: string; message: string; author: { name: string } }) => {
-      commits.push({
-        repo: repoName,
-        hash: c.sha,
-        date: event.created_at,
-        author: c.author?.name || username,
-        message: c.message?.split('\n')[0] || '',
-        files: [],
-        insertions: 0,
-        deletions: 0,
-        source: 'github',
-      });
-    });
+    // Create commit entries - temporarily disabled
+    // event.payload.commits?.forEach((c: { sha: string; message: string; author: { name: string } }) => {
+    //   commits.push({
+    //     repo: repoName,
+    //     hash: c.sha,
+    //     date: event.created_at,
+    //     author: c.author?.name || username,
+    //     message: c.message?.split('\n')[0] || '',
+    //     files: [],
+    //     insertions: 0,
+    //     deletions: 0,
+    //     source: 'github',
+    //   });
+    // });
   });
 
   const dailyContributions = Array.from(dailyMap.entries())
@@ -762,7 +764,8 @@ async function fetchWithRestAPI(
     .map(([repo, count]) => ({ repo, count, isPrivate: false }))
     .sort((a, b) => b.count - a.count);
 
-  const totalCommits = commits.length;
+  // Calculate total commits from daily contributions instead of commits array
+  const totalCommits = Array.from(dailyMap.values()).reduce((sum, count) => sum + count, 0);
 
   onProgress?.(`Found ${totalCommits} commits from recent events`);
 
