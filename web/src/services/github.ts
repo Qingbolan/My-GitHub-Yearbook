@@ -499,16 +499,13 @@ async function fetchWithGraphQL(
         }
       });
 
-      // Fetch commit stats for top repos only (limit to avoid long loading)
+      // Get LOC stats directly from GraphQL (much faster than REST API)
       if (reposToFetchStats.length > 0) {
-        // Only fetch stats for top 5 repos to keep loading fast
-        const topRepos = reposToFetchStats.slice(0, 5);
-        onProgress?.(`Fetching stats for top ${topRepos.length} repositories...`);
-        const stats = await fetchCommitStats(topRepos, chunk.from, chunk.to, viewerId, token, onProgress);
-        linesAdded += stats.additions;
-        linesDeleted += stats.deletions;
-        // Merge language LOC stats
-        stats.langLoc.forEach((loc, lang) => {
+        onProgress?.(`Fetching LOC stats...`);
+        const locStats = await fetchLOCViaGraphQL(reposToFetchStats.slice(0, 10), chunk.from, chunk.to, viewerId, token);
+        linesAdded += locStats.additions;
+        linesDeleted += locStats.deletions;
+        locStats.langLoc.forEach((loc, lang) => {
           langLocMap.set(lang, (langLocMap.get(lang) || 0) + loc);
         });
       }
