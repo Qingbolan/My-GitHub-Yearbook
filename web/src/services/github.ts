@@ -767,6 +767,7 @@ async function fetchCommitStats(
         const repoFullName = `${repo.owner}/${repo.name}`;
         const repoData = result.data[`repo${idx}`];
         const commits = repoData?.ref?.target?.history?.nodes || [];
+        console.log(`Repo ${repoFullName}: ${commits.length} commits to process`);
         const cachedRepoCommits = getCachedCommits(cache, repoFullName);
 
         for (const commit of commits) {
@@ -794,6 +795,7 @@ async function fetchCommitStats(
           cacheMisses++;
 
           try {
+            console.log(`Fetching commit ${commitHash.slice(0, 7)} from ${repoFullName}...`);
             const commitResponse = await fetch(
               `https://api.github.com/repos/${repoFullName}/commits/${commitHash}`,
               {
@@ -803,6 +805,7 @@ async function fetchCommitStats(
                 },
               }
             );
+            console.log(`Commit response: ${commitResponse.status}`);
 
             if (commitResponse.ok) {
               const commitData = await commitResponse.json();
