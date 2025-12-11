@@ -5,6 +5,46 @@ from typing import Any
 GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"
 
 
+async def fetch_user_latest_push_time(username: str, token: str | None = None) -> datetime | None:
+    """Fetch user's latest push time from GitHub to check if cache is stale."""
+    async with httpx.AsyncClient() as client:
+        if token:
+            # Use GraphQL to get the latest pushed_at time from user's repos
+            query = """
+            query {
+                viewer {
+                    repositories(first: 1, orderBy: {field: PUSHED_AT, direction: DESC}) {
+                        nodes { pushedAt }
+                    }
+                }
+            }
+            """
+            response = await client.post(
+                GITHUB_GRAPHQL_URL,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                json={"query": query},
+                timeout=10.0,
+            )
+            result = response.json()
+            repos = result.get("data", {}).get("viewer", {}).get("repositories", {}).get("nodes", [])
+            if repos and repos[0].get("pushedAt"):
+                return datetime.fromisoformat(repos[0]["pushedAt"].replace("Z", "+00:00")).replace(tzinfo=None)
+        else:
+            # Use REST API for public events
+            response = await client.get(
+                f"https://api.github.com/users/{username}/events/public?per_page=1",
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                events = response.json()
+                if events:
+                    return datetime.fromisoformat(events[0]["created_at"].replace("Z", "+00:00")).replace(tzinfo=None)
+    return None
+
+
 async def fetch_user_contributions(
     username: str,
     start_date: str,
@@ -38,13 +78,16 @@ async def fetch_with_graphql(
             location
             followers { totalCount }
             following { totalCount }
-            repositories(first: 100, ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) {
+            repositories(first: 100, ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER], orderBy: {field: PUSHED_AT, direction: DESC}) {
                 totalCount
                 nodes {
                     name
                     nameWithOwner
                     isPrivate
                     stargazerCount
+                    forkCount
+                    description
+                    url
                     primaryLanguage { name color }
                     languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
                         edges { size node { name color } }
@@ -68,6 +111,9 @@ async def fetch_with_graphql(
                         nameWithOwner
                         isPrivate
                         stargazerCount
+                        forkCount
+                        description
+                        url
                         primaryLanguage { name color }
                         owner { login __typename }
                     }
@@ -106,6 +152,12 @@ async def fetch_with_graphql(
         viewer = result.get("data", {}).get("viewer", {})
         collection = viewer.get("contributionsCollection", {})
         calendar = collection.get("contributionCalendar", {})
+        repos_data = viewer.get("repositories", {})
+        all_repos = repos_data.get("nodes", []) or []
+
+        # Count public/private repos
+        public_repos = [r for r in all_repos if not r.get("isPrivate")]
+        private_repos = [r for r in all_repos if r.get("isPrivate")]
 
         # Process daily contributions
         daily_contributions = []
@@ -126,12 +178,15 @@ async def fetch_with_graphql(
                 "count": item.get("contributions", {}).get("totalCount", 0),
                 "isPrivate": repo.get("isPrivate", False),
                 "stars": repo.get("stargazerCount", 0),
+                "forks": repo.get("forkCount", 0),
                 "language": repo.get("primaryLanguage", {}).get("name") if repo.get("primaryLanguage") else None,
+                "description": repo.get("description"),
+                "url": repo.get("url"),
             })
 
         # Process language stats
         lang_map: dict[str, dict] = {}
-        for repo in viewer.get("repositories", {}).get("nodes", []) or []:
+        for repo in all_repos:
             for edge in (repo.get("languages", {}).get("edges", []) or []):
                 lang_name = edge["node"]["name"]
                 if lang_name not in lang_map:
@@ -168,6 +223,9 @@ async def fetch_with_graphql(
             "location": viewer.get("location"),
             "followers": viewer.get("followers", {}).get("totalCount", 0),
             "following": viewer.get("following", {}).get("totalCount", 0),
+            "publicRepos": len(public_repos),
+            "privateRepos": len(private_repos),
+            "totalRepos": repos_data.get("totalCount", 0),
             "totalContributions": calendar.get("totalContributions", 0),
             "totalCommits": collection.get("totalCommitContributions", 0),
             "pullRequests": collection.get("totalPullRequestContributions", 0),

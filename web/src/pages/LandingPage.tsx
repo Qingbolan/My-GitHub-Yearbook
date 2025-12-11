@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { saveToken, getToken, deleteToken, type TokenInfo } from '../services/api'
 
 const currentYear = new Date().getFullYear()
 
@@ -14,15 +15,57 @@ export default function LandingPage() {
   const [start, setStart] = useState(PRESETS[0].start)
   const [end, setEnd] = useState(PRESETS[0].end)
   const [selected, setSelected] = useState(PRESETS[0].label)
+  const [showTokenModal, setShowTokenModal] = useState(false)
+  const [tokenInput, setTokenInput] = useState('')
+  const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null)
+  const [saving, setSaving] = useState(false)
   const navigate = useNavigate()
 
-  // Check if token is available (from env or localStorage for dev)
-  const hasToken = !!(import.meta.env.VITE_GITHUB_TOKEN || localStorage.getItem('github_token'))
+  // Load token info when username changes
+  useEffect(() => {
+    if (username.trim()) {
+      getToken(username.trim()).then(setTokenInfo).catch(() => setTokenInfo(null))
+    } else {
+      setTokenInfo(null)
+    }
+  }, [username])
+
+  // Also check localStorage token
+  const localToken = localStorage.getItem('github_token')
+  const hasToken = tokenInfo?.exists || !!localToken
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!username.trim()) return
     navigate(`/yearbook/${username.trim()}/${start}/${end}`)
+  }
+
+  const handleSaveToken = async () => {
+    if (!username.trim() || !tokenInput.trim()) return
+    setSaving(true)
+    try {
+      await saveToken(username.trim(), tokenInput.trim())
+      // Also save to localStorage for immediate use
+      localStorage.setItem('github_token', tokenInput.trim())
+      setTokenInfo(await getToken(username.trim()))
+      setTokenInput('')
+      setShowTokenModal(false)
+    } catch (error) {
+      console.error('Failed to save token:', error)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeleteToken = async () => {
+    if (!username.trim()) return
+    try {
+      await deleteToken(username.trim())
+      localStorage.removeItem('github_token')
+      setTokenInfo({ exists: false })
+    } catch (error) {
+      console.error('Failed to delete token:', error)
+    }
   }
 
   return (
@@ -79,12 +122,21 @@ export default function LandingPage() {
           </button>
 
           {/* Token status indicator */}
-          <div className="text-center text-[10px] text-[#484f58]">
-            {hasToken ? (
-              <span className="text-[#3fb950]">● Token configured (private repos enabled)</span>
-            ) : (
-              <span>Public repos only</span>
-            )}
+          <div className="flex items-center justify-between text-[10px]">
+            <div className="text-[#484f58]">
+              {hasToken ? (
+                <span className="text-[#3fb950]">● Token configured</span>
+              ) : (
+                <span>Public repos only</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowTokenModal(true)}
+              className="text-[#58a6ff] hover:underline"
+            >
+              {hasToken ? 'Manage Token' : 'Add Token'}
+            </button>
           </div>
         </form>
 
@@ -92,6 +144,83 @@ export default function LandingPage() {
           Like <a href="https://github.com/anuraghazra/github-readme-stats" className="text-[#58a6ff] hover:underline">github-readme-stats</a>, but for yearly summaries
         </p>
       </div>
+
+      {/* Token Modal */}
+      {showTokenModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 w-full max-w-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-medium text-white">GitHub Token Settings</h2>
+              <button
+                onClick={() => setShowTokenModal(false)}
+                className="text-[#8b949e] hover:text-white"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {tokenInfo?.exists ? (
+              <div className="space-y-3">
+                <div className="p-3 bg-[#0d1117] rounded border border-[#30363d]">
+                  <div className="text-xs text-[#8b949e] mb-1">Current Token</div>
+                  <div className="text-sm text-white font-mono">{tokenInfo.masked_token}</div>
+                  {tokenInfo.token_type && (
+                    <div className="text-xs text-[#8b949e] mt-1">Type: {tokenInfo.token_type}</div>
+                  )}
+                  {tokenInfo.scopes && (
+                    <div className="text-xs text-[#8b949e]">Scopes: {tokenInfo.scopes}</div>
+                  )}
+                </div>
+                <button
+                  onClick={handleDeleteToken}
+                  className="w-full py-2 bg-[#da3633] hover:bg-[#b62324] text-white text-sm rounded transition-colors"
+                >
+                  Remove Token
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-[#8b949e] block mb-1">GitHub Personal Access Token</label>
+                  <input
+                    type="password"
+                    value={tokenInput}
+                    onChange={e => setTokenInput(e.target.value)}
+                    placeholder="ghp_xxxxxxxxxxxx"
+                    className="w-full px-3 py-2 bg-[#0d1117] border border-[#30363d] rounded text-sm text-white placeholder-[#484f58] focus:border-[#58a6ff] focus:outline-none"
+                  />
+                </div>
+                <div className="text-xs text-[#8b949e]">
+                  Required scopes: <code className="bg-[#21262d] px-1 rounded">repo</code>, <code className="bg-[#21262d] px-1 rounded">read:org</code>
+                </div>
+                <button
+                  onClick={handleSaveToken}
+                  disabled={!tokenInput.trim() || !username.trim() || saving}
+                  className="w-full py-2 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white text-sm rounded transition-colors"
+                >
+                  {saving ? 'Saving...' : 'Save Token'}
+                </button>
+                {!username.trim() && (
+                  <div className="text-xs text-[#f85149]">Please enter your username first</div>
+                )}
+              </div>
+            )}
+
+            <div className="mt-4 pt-3 border-t border-[#30363d] text-xs text-[#8b949e]">
+              <a
+                href="https://github.com/settings/tokens/new?scopes=repo,read:org"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#58a6ff] hover:underline"
+              >
+                Create a new token on GitHub
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

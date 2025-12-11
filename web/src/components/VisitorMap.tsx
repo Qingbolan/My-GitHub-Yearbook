@@ -1,106 +1,90 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, memo } from 'react'
+import { useParams } from 'react-router-dom'
+import {
+  ComposableMap,
+  Geographies,
+  Geography,
+  Marker,
+  ZoomableGroup
+} from 'react-simple-maps'
+import { logVisit, getVisitStats, getCurrentLocation, type VisitStats, type GeoLocation } from '../services/api'
+import { getFingerprint } from '../utils/fingerprint'
 
-interface VisitorLocation {
-  ip: string
-  city: string
-  country: string
-  countryCode: string
-  lat: number
-  lon: number
-  timestamp: number
-}
+// World map TopoJSON URL (Natural Earth 110m)
+const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
 
-interface VisitorStats {
-  total: number
-  unique: number
-  locations: VisitorLocation[]
-  byCountry: Record<string, number>
-}
-
-const VISITOR_STORAGE_KEY = 'github_yearbook_visitors'
-
-// Convert lat/lon to SVG coordinates (simple equirectangular projection)
-function latLonToXY(lat: number, lon: number, width: number, height: number): [number, number] {
-  const x = ((lon + 180) / 360) * width
-  const y = ((90 - lat) / 180) * height
-  return [x, y]
-}
-
-async function getVisitorLocation(): Promise<VisitorLocation | null> {
-  try {
-    const response = await fetch('https://ipapi.co/json/')
-    if (!response.ok) return null
-    const data = await response.json()
-    return {
-      ip: data.ip,
-      city: data.city || 'Unknown',
-      country: data.country_name || 'Unknown',
-      countryCode: data.country_code || '',
-      lat: data.latitude || 0,
-      lon: data.longitude || 0,
-      timestamp: Date.now(),
-    }
-  } catch {
-    return null
-  }
-}
-
-function loadVisitorStats(): VisitorStats {
-  try {
-    const stored = localStorage.getItem(VISITOR_STORAGE_KEY)
-    if (stored) return JSON.parse(stored)
-  } catch { /* ignore */ }
-  return { total: 0, unique: 0, locations: [], byCountry: {} }
-}
-
-function saveVisitorStats(stats: VisitorStats) {
-  try {
-    localStorage.setItem(VISITOR_STORAGE_KEY, JSON.stringify(stats))
-  } catch { /* ignore */ }
-}
-
-async function recordVisitor(): Promise<VisitorStats> {
-  const stats = loadVisitorStats()
-  const location = await getVisitorLocation()
-
-  if (location) {
-    stats.total++
-    const existingIndex = stats.locations.findIndex(l => l.ip === location.ip)
-    if (existingIndex === -1) {
-      stats.unique++
-      stats.locations.push(location)
-      stats.byCountry[location.country] = (stats.byCountry[location.country] || 0) + 1
-    } else {
-      stats.locations[existingIndex].timestamp = Date.now()
-    }
-    if (stats.locations.length > 100) {
-      stats.locations = stats.locations.slice(-100)
-    }
-    saveVisitorStats(stats)
-  }
-  return stats
-}
-
-// Simple world map SVG path (simplified continents)
-const WORLD_PATH = `M2,43 L5,42 L8,40 L12,41 L15,43 L18,41 L22,42 L25,40 L28,41 L30,43 L28,45 L25,47 L22,48 L18,47 L15,48 L12,47 L8,48 L5,47 L2,48 Z
-M35,30 L40,28 L45,29 L50,27 L55,28 L58,30 L60,33 L58,36 L55,38 L50,39 L45,38 L40,39 L35,37 L33,34 Z
-M62,25 L70,22 L80,23 L88,25 L95,28 L98,32 L95,38 L88,42 L80,43 L70,42 L62,40 L58,35 L60,30 Z
-M70,45 L75,43 L80,44 L85,46 L88,50 L85,55 L80,58 L75,57 L70,55 L68,50 Z
-M15,55 L20,52 L28,53 L35,56 L38,62 L35,70 L28,75 L20,74 L15,70 L12,62 Z
-M85,60 L90,58 L95,60 L98,65 L95,72 L90,75 L85,73 L82,68 Z`
+// Memoized map background to prevent re-renders
+const MapBackground = memo(function MapBackground() {
+  return (
+    <Geographies geography={GEO_URL}>
+      {({ geographies }) =>
+        geographies.map((geo) => (
+          <Geography
+            key={geo.rsmKey}
+            geography={geo}
+            fill="#21262d"
+            stroke="#30363d"
+            strokeWidth={0.5}
+            style={{
+              default: { outline: 'none' },
+              hover: { outline: 'none', fill: '#30363d' },
+              pressed: { outline: 'none' },
+            }}
+          />
+        ))
+      }
+    </Geographies>
+  )
+})
 
 export default function VisitorMap() {
-  const [stats, setStats] = useState<VisitorStats | null>(null)
-  const [currentLocation, setCurrentLocation] = useState<VisitorLocation | null>(null)
+  const { username, start } = useParams<{ username: string; start: string }>()
+  const [stats, setStats] = useState<VisitStats | null>(null)
+  const [currentLocation, setCurrentLocation] = useState<GeoLocation | null>(null)
+  const [loading, setLoading] = useState(true)
+  const hasInitialized = useRef(false)
+
+  const year = start ? parseInt(start.slice(0, 4)) : new Date().getFullYear()
 
   useEffect(() => {
-    recordVisitor().then(s => {
-      setStats(s)
-      getVisitorLocation().then(setCurrentLocation)
-    })
-  }, [])
+    if (!username || hasInitialized.current) return
+    hasInitialized.current = true
 
-  if (!stats) {
+    const init = async () => {
+      try {
+        // Get fingerprint and location in parallel
+        const [fingerprint, location] = await Promise.all([
+          getFingerprint(),
+          getCurrentLocation()
+        ])
+        setCurrentLocation(location)
+
+        // Log visit to backend with fingerprint for deduplication
+        await logVisit({
+          target_username: username,
+          target_year: year,
+          visitor_country: location?.country,
+          visitor_city: location?.city,
+          visitor_lat: location?.lat,
+          visitor_lng: location?.lon,
+          visitor_fingerprint: fingerprint,
+          referer: document.referrer || undefined,
+        })
+
+        // Fetch visit stats from backend
+        const visitStats = await getVisitStats(username, year)
+        setStats(visitStats)
+      } catch (error) {
+        console.error('Failed to load visitor stats:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    init()
+  }, [username, year])
+
+  if (loading) {
     return (
       <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 text-center text-[#8b949e] text-sm">
         Loading visitor map...
@@ -108,11 +92,11 @@ export default function VisitorMap() {
     )
   }
 
-  const width = 100
-  const height = 60
-  const topCountries = Object.entries(stats.byCountry)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
+  if (!stats) {
+    return null
+  }
+
+  const topCountries = stats.by_country.slice(0, 5)
 
   return (
     <div className="bg-[#0d1117] border border-[#30363d] rounded-lg overflow-hidden">
@@ -129,51 +113,74 @@ export default function VisitorMap() {
             <span className="text-[#3fb950] font-medium">{stats.total}</span> visits
           </span>
           <span className="text-[#8b949e]">
-            <span className="text-[#58a6ff] font-medium">{stats.unique}</span> unique
+            <span className="text-[#58a6ff] font-medium">{stats.map_data.length}</span> locations
           </span>
         </div>
       </div>
 
       {/* Map */}
-      <div className="p-4">
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" style={{ maxHeight: '200px' }}>
-          {/* Background */}
-          <rect width={width} height={height} fill="#0d1117" />
+      <div className="p-2" style={{ height: '220px' }}>
+        <ComposableMap
+          projection="geoMercator"
+          projectionConfig={{
+            scale: 120,
+            center: [0, 30],
+          }}
+          style={{
+            width: '100%',
+            height: '100%',
+          }}
+        >
+          <ZoomableGroup>
+            <MapBackground />
 
-          {/* Grid lines */}
-          {[0, 20, 40, 60, 80, 100].map(x => (
-            <line key={`v${x}`} x1={x} y1={0} x2={x} y2={height} stroke="#21262d" strokeWidth={0.2} />
-          ))}
-          {[0, 15, 30, 45, 60].map(y => (
-            <line key={`h${y}`} x1={0} y1={y} x2={width} y2={y} stroke="#21262d" strokeWidth={0.2} />
-          ))}
+            {/* Visitor markers */}
+            {stats.map_data.map((loc, idx) => {
+              const isCurrent = currentLocation &&
+                Math.abs(loc.lat - currentLocation.lat) < 0.5 &&
+                Math.abs(loc.lng - currentLocation.lon) < 0.5
 
-          {/* Simplified continents */}
-          <path d={WORLD_PATH} fill="#21262d" stroke="#30363d" strokeWidth={0.3} transform="scale(1)" />
-
-          {/* Visitor dots */}
-          {stats.locations.map((loc, idx) => {
-            const [x, y] = latLonToXY(loc.lat, loc.lon, width, height)
-            const isCurrent = loc.ip === currentLocation?.ip
-            return (
-              <g key={`${loc.ip}-${idx}`}>
-                <circle
-                  cx={x}
-                  cy={y}
-                  r={isCurrent ? 1.5 : 1}
-                  fill={isCurrent ? '#f97316' : '#3fb950'}
-                  opacity={0.9}
-                />
-                {isCurrent && (
-                  <circle cx={x} cy={y} r={2.5} fill="none" stroke="#f97316" strokeWidth={0.3} opacity={0.5}>
-                    <animate attributeName="r" from="1.5" to="4" dur="2s" repeatCount="indefinite" />
-                    <animate attributeName="opacity" from="0.8" to="0" dur="2s" repeatCount="indefinite" />
-                  </circle>
-                )}
-              </g>
-            )
-          })}
-        </svg>
+              return (
+                <Marker key={`${loc.lat}-${loc.lng}-${idx}`} coordinates={[loc.lng, loc.lat]}>
+                  {/* Pulse animation for current location */}
+                  {isCurrent && (
+                    <circle
+                      r={8}
+                      fill="none"
+                      stroke="#f97316"
+                      strokeWidth={1}
+                      opacity={0.5}
+                    >
+                      <animate
+                        attributeName="r"
+                        from="4"
+                        to="12"
+                        dur="2s"
+                        repeatCount="indefinite"
+                      />
+                      <animate
+                        attributeName="opacity"
+                        from="0.8"
+                        to="0"
+                        dur="2s"
+                        repeatCount="indefinite"
+                      />
+                    </circle>
+                  )}
+                  {/* Main dot */}
+                  <circle
+                    r={isCurrent ? 5 : 3}
+                    fill={isCurrent ? '#f97316' : '#3fb950'}
+                    opacity={0.9}
+                    stroke={isCurrent ? '#f97316' : '#3fb950'}
+                    strokeWidth={1}
+                    strokeOpacity={0.3}
+                  />
+                </Marker>
+              )
+            })}
+          </ZoomableGroup>
+        </ComposableMap>
       </div>
 
       {/* Footer */}
@@ -186,7 +193,7 @@ export default function VisitorMap() {
         {topCountries.length > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-[#8b949e]">Top:</span>
-            {topCountries.slice(0, 3).map(([country, count]) => (
+            {topCountries.slice(0, 3).map(({ country, count }) => (
               <span key={country} className="text-[#8b949e]">
                 {country} <span className="text-[#3fb950]">({count})</span>
               </span>

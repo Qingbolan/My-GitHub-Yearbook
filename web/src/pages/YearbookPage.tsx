@@ -1,53 +1,40 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { fetchUserContributions, type ContributionData } from '../services/github'
+import { useParams, useLocation } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { getYearbookStats, type YearbookStats, API_BASE } from '../services/api'
 import VisitorMap from '../components/VisitorMap'
 
 export default function YearbookPage() {
   const { username, start, end } = useParams<{ username: string; start: string; end: string }>()
-  const [data, setData] = useState<ContributionData | null>(null)
+  const location = useLocation()
+  const [data, setData] = useState<YearbookStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
 
+  const year = start ? parseInt(start.slice(0, 4)) : new Date().getFullYear()
+  const embed = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    return params.get('embed') === '1'
+  }, [location.search])
+
   useEffect(() => {
-    if (!username || !start || !end) return
-    // Get token from env (build time) or localStorage (fallback for local dev)
-    const token = import.meta.env.VITE_GITHUB_TOKEN || localStorage.getItem('github_token') || undefined
-    fetchUserContributions(username, start, end, token)
+    if (!username || !year) return
+    // Use backend API with caching - no need for token on frontend
+    // Backend will use stored token if available
+    getYearbookStats(username, year)
       .then(setData)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [username, start, end])
+  }, [username, year])
 
   const stats = useMemo(() => {
     if (!data) return null
-    const repos = data.repositoryContributions
-    const timeline = data.dailyContributions
+    const repos = data.repositoryContributions || []
+    const timeline = data.dailyContributions || []
     const total = data.totalContributions || data.totalCommits
-
-    // Streaks
-    const active = timeline.filter(d => d.count > 0).sort((a, b) => a.date.localeCompare(b.date))
-    let longest = 0, streak = 0
-    let prev: Date | null = null
-    active.forEach(d => {
-      const cur = new Date(d.date)
-      if (prev && (cur.getTime() - prev.getTime()) / 86400000 === 1) streak++
-      else { longest = Math.max(longest, streak); streak = 1 }
-      prev = cur
-    })
-    longest = Math.max(longest, streak)
-
-    // Current streak
-    let current = 0
-    const dates = new Set(active.map(d => d.date))
-    const endD = new Date(end!)
-    for (let i = 0; i < 365; i++) {
-      const d = new Date(endD); d.setDate(d.getDate() - i)
-      if (dates.has(d.toISOString().split('T')[0])) current++
-      else if (i > 0) break
-    }
 
     // Weekly activity (52 weeks)
     const weekMap = new Map<number, number>()
@@ -80,20 +67,20 @@ export default function YearbookPage() {
       reviews: data.pullRequestReviews,
       issues: data.issues,
       repoCount: repos.length,
-      publicRepoCount: data.publicRepos,
-      privateRepoCount: data.privateRepos,
-      totalRepoCount: data.totalRepos,
+      publicRepoCount: data.publicRepoCount,
+      privateRepoCount: data.privateRepoCount,
+      totalRepoCount: data.totalRepoCount,
       stars: repos.reduce((s, r) => s + (r.stars || 0), 0),
       forks: repos.reduce((s, r) => s + (r.forks || 0), 0),
-      longest,
-      current,
-      activeDays: active.length,
+      longest: data.longestStreak,
+      current: data.currentStreak,
+      activeDays: data.activeDays,
       weeks,
       maxW,
       dayOfWeek,
       maxDay,
       maxDayEntry,
-      avgPerDay: (total / Math.max(active.length, 1)).toFixed(1),
+      avgPerDay: (total / Math.max(data.activeDays, 1)).toFixed(1),
       bio: data.bio,
       company: data.company,
       location: data.location,
@@ -102,25 +89,21 @@ export default function YearbookPage() {
       avatarUrl: data.avatarUrl,
       organizations: data.organizations,
       // Full language stats
-      languageStats: data.languageStats,
-      // All repos
-      allRepos: data.allRepos,
+      languageStats: data.languageStats || [],
       // Contributed repos
       contributedRepos: repos,
       privateRepos,
       publicRepos,
-      missingScopes: data.missingScopes,
-      tokenType: data.tokenType,
-      linesAdded: data.linesAdded,
-      linesDeleted: data.linesDeleted,
+      // Cache info
+      cached: data.cached,
     }
-  }, [data, end])
+  }, [data])
 
-  const year = start?.slice(0, 4)
+  const yearStr = start?.slice(0, 4)
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
   const copyMarkdown = () => {
-    navigator.clipboard.writeText(`[![${username}'s ${year} GitHub Stats](${location.href})](${location.href})`)
+    navigator.clipboard.writeText(`[![${username}'s ${yearStr} GitHub Stats](${API_BASE}/card/${username}/${start}/${end})](${location.href})`)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -130,7 +113,7 @@ export default function YearbookPage() {
     const html2canvas = (await import('html2canvas')).default
     const canvas = await html2canvas(cardRef.current, { backgroundColor: '#0d1117', scale: 2 })
     const a = document.createElement('a')
-    a.download = `${username}-${year}-stats.png`
+    a.download = `${username}-${yearStr}-stats.png`
     a.href = canvas.toDataURL()
     a.click()
   }
@@ -147,7 +130,6 @@ export default function YearbookPage() {
   if (error || !stats) return (
     <div className="min-h-screen bg-[#0d1117] flex flex-col items-center justify-center gap-4">
       <p className="text-[#f85149]">{error || 'No data'}</p>
-      <Link to="/" className="text-[#58a6ff] text-sm hover:underline">Back</Link>
     </div>
   )
 
@@ -160,49 +142,21 @@ export default function YearbookPage() {
   return (
     <div className="min-h-screen bg-[#0d1117] p-4 md:p-6">
       {/* Actions */}
-      <div className="max-w-5xl mx-auto mb-3 flex justify-between items-center">
-        <Link to="/" className="text-[#8b949e] text-sm hover:text-white">Back</Link>
-        <div className="flex gap-2">
-          <button onClick={copyMarkdown} className="px-3 py-1 text-xs bg-[#21262d] border border-[#30363d] rounded text-[#c9d1d9] hover:border-[#8b949e]">
-            {copied ? 'Copied!' : 'Copy MD'}
-          </button>
-          <button onClick={downloadPng} className="px-3 py-1 text-xs bg-[#238636] rounded text-white hover:bg-[#2ea043]">
-            PNG
-          </button>
-        </div>
-      </div>
-
-      {/* Missing Scopes Warning */}
-      {
-        stats.missingScopes && stats.missingScopes.length > 0 && (
-          <div className="max-w-5xl mx-auto mb-4 p-3 bg-yellow-900/30 border border-yellow-700/50 rounded-md flex items-center gap-3 text-yellow-200 text-sm">
-            <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <div>
-              <span className="font-bold">Missing Permissions:</span> Your token is missing the following scopes: <code className="bg-yellow-900/50 px-1 rounded">{stats.missingScopes.join(', ')}</code>.
-              Some private data (organizations, repos) may be missing. Please update your token permissions.
-            </div>
-          </div>
-        )
-      }
-
-      {/* Fine-grained Token Warning */}
-      {stats.tokenType === 'fine-grained' && (
-        <div className="max-w-5xl mx-auto mb-4 p-3 bg-blue-900/30 border border-blue-700/50 rounded-md flex items-center gap-3 text-blue-200 text-sm">
-          <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <div>
-            <span className="font-bold">Fine-grained Token Detected:</span> You are using a fine-grained token.
-            Ensure you have selected <strong>"All repositories"</strong> or explicitly selected the organizations you want to see.
-            Also verify "Organization permissions" &gt; "Members" is set to "Read-only".
+      {!embed && (
+        <div className="max-w-5xl mx-auto mb-3 flex justify-end items-center">
+          <div className="flex gap-2">
+            <button onClick={copyMarkdown} className="px-3 py-1 text-xs bg-[#21262d] border border-[#30363d] rounded text-[#c9d1d9] hover:border-[#8b949e]">
+              {copied ? 'Copied!' : 'Copy MD'}
+            </button>
+            <button onClick={downloadPng} className="px-3 py-1 text-xs bg-[#238636] rounded text-white hover:bg-[#2ea043]">
+              PNG
+            </button>
           </div>
         </div>
       )}
 
       {/* Main Card */}
-      <div ref={cardRef} className="max-w-5xl mx-auto bg-[#0d1117] border border-[#30363d] rounded-lg overflow-hidden">
+      <div id="yearbook-card" ref={cardRef} className="max-w-5xl mx-auto bg-[#0d1117] border border-[#30363d] rounded-lg overflow-hidden">
         {/* Header with profile */}
         <div className="p-4 border-b border-[#21262d] flex items-center gap-4">
           {stats.avatarUrl && (
@@ -211,7 +165,7 @@ export default function YearbookPage() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-lg font-bold text-white">{username}</span>
-              <span className="text-xs text-[#8b949e] bg-[#21262d] px-2 py-0.5 rounded">{year}</span>
+              <span className="text-xs text-[#8b949e] bg-[#21262d] px-2 py-0.5 rounded">{yearStr}</span>
               {stats.organizations.length > 0 && (
                 <div className="flex -space-x-2">
                   {stats.organizations.map(org => (
@@ -226,7 +180,18 @@ export default function YearbookPage() {
                 </div>
               )}
             </div>
-            {stats.bio && <p className="text-xs text-[#8b949e] truncate mt-0.5">{stats.bio}</p>}
+            {stats.bio && (
+              <div className="text-xs text-[#8b949e] mt-0.5 [&_a]:text-[#58a6ff] [&_a]:hover:underline [&_p]:my-0.5">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" />
+                  }}
+                >
+                  {stats.bio}
+                </ReactMarkdown>
+              </div>
+            )}
             <div className="flex gap-3 mt-1 text-xs text-[#8b949e]">
               {stats.company && <span>{stats.company}</span>}
               {stats.location && <span>{stats.location}</span>}
@@ -399,17 +364,21 @@ export default function YearbookPage() {
       </div>
 
       {/* Embed Code */}
-      <div className="max-w-5xl mx-auto mt-4">
-        <div className="text-xs text-[#8b949e] mb-1">Embed in README:</div>
-        <code className="block p-2 bg-[#161b22] border border-[#30363d] rounded text-[10px] text-[#8b949e] overflow-x-auto font-mono">
-          {`[![${username}'s ${year} GitHub Stats](${location.origin}/api/card/${username}/${start}/${end})](${location.href})`}
-        </code>
-      </div>
+      {!embed && (
+        <div className="max-w-5xl mx-auto mt-4">
+          <div className="text-xs text-[#8b949e] mb-1">Embed in README:</div>
+          <code className="block p-2 bg-[#161b22] border border-[#30363d] rounded text-[10px] text-[#8b949e] overflow-x-auto font-mono">
+            {`[![${username}'s ${yearStr} GitHub Stats](${API_BASE}/card/${username}/${start}/${end})](${location.href})`}
+          </code>
+        </div>
+      )}
 
       {/* Visitor Map */}
-      <div className="max-w-5xl mx-auto mt-6">
-        <VisitorMap />
-      </div>
+      {!embed && (
+        <div className="max-w-5xl mx-auto mt-6">
+          <VisitorMap />
+        </div>
+      )}
     </div >
   )
 }
