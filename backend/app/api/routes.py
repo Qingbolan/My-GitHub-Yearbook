@@ -636,126 +636,98 @@ def generate_stats_svg(stats: YearbookStats) -> str:
     return svg
 
 
+
 @router.get("/card/{username}/{start}/{end}")
 async def get_stats_card(
     username: str,
     start: str,
     end: str,
+    width: int = 1280,
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate SVG card for yearbook stats (for embedding in Markdown)."""
-    # Extract year from start date
-    year = int(start[:4])
-
-    # Try to get token from database
-    token = None
-    stmt = select(UserToken).where(UserToken.username == username, UserToken.is_valid == True)
-    result = await db.execute(stmt)
-    stored_token = result.scalar_one_or_none()
-    if stored_token:
-        token = stored_token.github_token
-
-    # Check cache
-    stmt = select(YearbookStats).where(
-        YearbookStats.username == username,
-        YearbookStats.year == year,
-    )
-    result = await db.execute(stmt)
-    cached = result.scalar_one_or_none()
-
-    # Check if cache is stale by comparing with user's latest push time
-    cache_is_valid = False
-    if cached:
-        try:
-            latest_push = await fetch_user_latest_push_time(username, token)
-            if latest_push is None or cached.updated_at >= latest_push:
-                cache_is_valid = True
-        except Exception:
-            cache_is_valid = True
-
-    if cached and cache_is_valid:
-        svg = generate_stats_svg(cached)
-        return Response(
-            content=svg,
-            media_type="image/svg+xml",
-            headers={
-                "Cache-Control": "public, max-age=1800",  # Cache for 30 minutes
-                "Content-Type": "image/svg+xml; charset=utf-8",
-            }
-        )
-
-    # If cache is stale, delete it
-    if cached and not cache_is_valid:
-        await db.delete(cached)
-        await db.commit()
-
-    # Fetch fresh data - call the stats endpoint logic
-    await get_yearbook_stats(username, year, token, db)
-
-    # Re-fetch the newly created stats
-    stmt = select(YearbookStats).where(
-        YearbookStats.username == username,
-        YearbookStats.year == year,
-    )
-    result = await db.execute(stmt)
-    stats = result.scalar_one_or_none()
-
-    if not stats:
-        raise HTTPException(status_code=404, detail="Failed to generate stats")
-
-    svg = generate_stats_svg(stats)
-    return Response(
-        content=svg,
-        media_type="image/svg+xml",
-        headers={
-            "Cache-Control": "public, max-age=1800",
-            "Content-Type": "image/svg+xml; charset=utf-8",
-        }
-    )
+    """Generate PNG card (screenshot of frontend) for yearbook stats."""
+    return await generate_screenshot(username, start, end, width)
 
 
 @router.get("/screenshot/{username}/{year}")
-async def screenshot_yearbook_card(
+async def get_screenshot(
     username: str,
     year: int,
+    width: int = 1280,
+    db: AsyncSession = Depends(get_db),
 ):
-    """Render the frontend yearbook page headlessly and return a PNG of the main card."""
-    # Build file:// URL to the built frontend with redirect to the desired route and embed mode
-    repo_root = Path(__file__).resolve().parents[3]
-    index_html = repo_root / "web" / "dist" / "index.html"
-    if not index_html.exists():
-        raise HTTPException(status_code=500, detail="Frontend build not found. Run web build first.")
-
+    """Generate PNG screenshot for a full year."""
     start = f"{year}-01-01"
     end = f"{year}-12-31"
-    redirect_path = f"/yearbook/{username}/{start}/{end}"
-    file_url = f"file://{index_html}?redirect={quote(redirect_path)}&embed=1"
+    return await generate_screenshot(username, start, end, width)
 
-    # Use Playwright to render the page and capture the specific card element
+
+async def generate_screenshot(username: str, start: str, end: str, width: int = 1280):
+    """Shared screenshot generation logic."""
+    # Extract year from start date (rough approximation for cache key)
+    year = int(start[:4])
+    cache_dir = Path("backend/cache")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f"{username}_{year}_{start}_{end}_{width}.png"
+
+    # Check cache (30 minute TTL)
+    if cache_file.exists():
+        mtime = datetime.fromtimestamp(cache_file.stat().st_mtime)
+        if datetime.now() - mtime < timedelta(minutes=30):
+            return Response(
+                content=cache_file.read_bytes(),
+                media_type="image/png",
+                headers={
+                    "Cache-Control": "public, max-age=1800",
+                    "Content-Type": "image/png",
+                }
+            )
+
+    # Use running dev server for rendering to avoid CORS issues with file://
+    # This requires 'npm run dev' to be running on port 5173
+    file_url = f"http://localhost:5173/yearbook/{username}/{start}/{end}?screenshot=1"
+
+    # Use Playwright to render the page
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
-        context = await browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            device_scale_factor=2,
-        )
-        page = await context.new_page()
         try:
+            # Create context with appropriate viewport
+            context = await browser.new_context(
+                viewport={"width": width, "height": 1200}, # Taller viewport for full content
+                device_scale_factor=2,
+            )
+            page = await context.new_page()
+            
+            # Go to page and wait for network idle to ensure data is fetching
             await page.goto(file_url, wait_until="networkidle", timeout=60000)
-            # Wait for the main card to be ready
-            await page.wait_for_selector("#yearbook-card", state="attached", timeout=60000)
-            element = await page.query_selector("#yearbook-card")
+            
+            # Wait for the specific target element to be ready
+            # We target #screenshot-target which wraps Card + Map
+            await page.wait_for_selector("#screenshot-target", state="attached", timeout=60000)
+            
+            # Brief pause to ensure all charts/maps are fully rendered/animated
+            await page.wait_for_timeout(2000)
+            
+            element = await page.query_selector("#screenshot-target")
             if not element:
                 raise HTTPException(status_code=500, detail="Card element not found in frontend page.")
+            
             png_bytes = await element.screenshot(type="png")
+            
+            # Save to cache
+            cache_file.write_bytes(png_bytes)
+            
+            return Response(
+                content=png_bytes,
+                media_type="image/png",
+                headers={
+                    "Cache-Control": "public, max-age=1800",
+                    "Content-Type": "image/png",
+                }
+            )
+        except Exception as e:
+            print(f"Error generating screenshot: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to generate card: {str(e)}")
         finally:
-            await context.close()
             await browser.close()
 
-    return Response(
-        content=png_bytes,
-        media_type="image/png",
-        headers={
-            "Cache-Control": "public, max-age=600",
-            "Content-Type": "image/png",
-        },
-    )
