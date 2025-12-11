@@ -80,3 +80,41 @@ export interface AppData {
     hourlyStats?: HourlyStats[];
     repoDetails?: RepoDetails[];
 }
+
+import { LanguageStat, RepoContribution } from './services/api';
+
+export interface ProcessedYearbookStats {
+    total: number;
+    commits: number;
+    prs: number;
+    reviews: number;
+    issues: number;
+    repoCount: number;
+    publicRepoCount: number;
+    privateRepoCount: number;
+    totalRepoCount: number;
+    stars: number;
+    forks: number;
+    longest: number;
+    current: number;
+    activeDays: number;
+    weeks: number[];
+    maxW: number;
+    weeksCount: number;
+    dayOfWeek: number[];
+    maxDay: number;
+    maxDayEntry?: { date: string; count: number };
+    avgPerDay: string;
+    bio?: string;
+    company?: string;
+    location?: string;
+    followers: number;
+    following: number;
+    avatarUrl?: string;
+    organizations: Array<{ login: string; avatarUrl: string }>;
+    languageStats: LanguageStat[];
+    contributedRepos: RepoContribution[];
+    privateRepos: RepoContribution[];
+    publicRepos: RepoContribution[];
+    cached: boolean;
+}

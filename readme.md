@@ -6,15 +6,15 @@ A self-hosted tool to generate beautiful, shareable yearbooks of your GitHub act
 
 ## Features
 
--   **Interactive Yearbook**: A React-based web view with detailed stats, charts, and a "Spotify Wrapped" style summary.
--   **Responsive Screenshots**: Generate PNG images of your stats optimized for Mobile or Desktop.
--   **Flexible Time Periods**: Support for specific years (`2024`), or rolling windows like `pastyear` (last 365 days) and `pastmonth` (last 30 days).
--   **Embeddable**: Easy-to-use endpoints for embedding in GitHub profiles (as images) or personal websites (as iframes).
--   **Markdown Support**: Render your bio with GitHub Flavored Markdown.
+- **Interactive Yearbook**: A React-based web view with detailed stats, charts, and a "Spotify Wrapped" style summary.
+- **Responsive Screenshots**: Generate PNG images of your stats optimized for Mobile or Desktop.
+- **Flexible Time Periods**: Support for specific years (`2024`), or rolling windows like `pastyear` (last 365 days) and `pastmonth` (last 30 days).
+- **Embeddable**: Easy-to-use endpoints for embedding in GitHub profiles (as images) or personal websites (as iframes).
+- **Markdown Support**: Render your bio with GitHub Flavored Markdown.
 
 ---
 
--   **Markdown Support**: Render your bio with GitHub Flavored Markdown.
+- **Markdown Support**: Render your bio with GitHub Flavored Markdown.
 
 ## 📸 Examples Gallery
 
@@ -39,18 +39,20 @@ Here are all the ways you can display your yearbook.
 **Rolling Past Month (Last 30 Days)**
 [![Past Month Stats](http://localhost:8000/api/screenshot/Qingbolan/pastmonth)](http://localhost:8000/api/embed/Qingbolan/pastmonth)
 
-
 ### 3. Embed Modules (Sectional)
 
 These are best used as **Iframes** so you can see the specific section live.
 
 **Full Dashboard**
+
 <iframe src="http://localhost:8000/api/embed/Qingbolan/pastyear" width="100%" height="800" frameborder="0"></iframe>
 
 **Overview Only (`#overview`)**
+
 <iframe src="http://localhost:8000/api/embed/Qingbolan/pastyear#overview" width="100%" height="400" frameborder="0"></iframe>
 
 **Map Only (`#viewmapi`)**
+
 <iframe src="http://localhost:8000/api/embed/Qingbolan/pastyear#viewmapi" width="100%" height="400" frameborder="0"></iframe>
 
 ---
@@ -89,13 +91,14 @@ You can embed the full interactive experience directly into your website.
 
 You can display specific sections of the yearbook using URL text fragments (hashes). This is perfect for building custom dashboards where you only want to show the map or the summary card.
 
--   **Full View (Default)**: `.../api/embed/{username}/pastyear`
--   **Overview Only** (`#overview`): Shows only the stats card.
-    -   `.../api/embed/{username}/pastyear#overview`
--   **Map Only** (`#viewmapi`): Shows only the visitor map.
-    -   `.../api/embed/{username}/pastyear#viewmapi`
+- **Full View (Default)**: `.../api/embed/{username}/pastyear`
+- **Overview Only** (`#overview`): Shows only the stats card.
+  - `.../api/embed/{username}/pastyear#overview`
+- **Map Only** (`#viewmapi`): Shows only the visitor map.
+  - `.../api/embed/{username}/pastyear#viewmapi`
 
 Example of embedding just the map:
+
 ```html
 <iframe src="http://your-domain/api/embed/{username}/pastyear#viewmapi" ...></iframe>
 ```
@@ -105,37 +108,41 @@ Example of embedding just the map:
 ## ⚙️ API Reference
 
 ### 1. Screenshot Generation
+
 Generates a static PNG image of the yearbook.
 
 **Endpoint:** `GET /api/screenshot/{username}/{period}`
 
-| Parameter  | Type     | Default      | Description                                                      |
-| :--------- | :------- | :----------- | :--------------------------------------------------------------- |
-| `username` | `string` | **Required** | Your GitHub username                                             |
-| `period`   | `string` | **Required** | `YYYY` (e.g. `2024`), `pastyear`, or `pastmonth`                 |
-| `width`    | `int`    | `1280`       | Viewport width. Use `400` for mobile layout, `1280` for desktop. |
+| Parameter    | Type       | Default            | Description                                                          |
+| :----------- | :--------- | :----------------- | :------------------------------------------------------------------- |
+| `username` | `string` | **Required** | Your GitHub username                                                 |
+| `period`   | `string` | **Required** | `YYYY` (e.g. `2024`), `pastyear`, or `pastmonth`             |
+| `width`    | `int`    | `1280`           | Viewport width. Use `400` for mobile layout, `1280` for desktop. |
 
 **Examples:**
--   `.../api/screenshot/benz/2024?width=1280` (Desktop view)
--   `.../api/screenshot/benz/pastyear?width=400` (Mobile view)
+
+- `.../api/screenshot/benz/2024?width=1280` (Desktop view)
+- `.../api/screenshot/benz/pastyear?width=400` (Mobile view)
 
 ### 2. Embed Redirect
+
 Returns a redirect to the interactive frontend. Useful for permanent links.
 
 **Endpoint:** `GET /api/embed/{username}/{period}`
 
-| Parameter  | Type     | Default      | Description                                     |
-| :--------- | :------- | :----------- | :---------------------------------------------- |
-| `username` | `string` | **Required** | Your GitHub username                            |
-| `period`   | `string` | **Required** | `YYYY`, `pastyear`, or `pastmonth`              |
-| `hash`     | `string` | Optional     | `#overview` (Card only), `#viewmapi` (Map only) |
+| Parameter    | Type       | Default            | Description                                         |
+| :----------- | :--------- | :----------------- | :-------------------------------------------------- |
+| `username` | `string` | **Required** | Your GitHub username                                |
+| `period`   | `string` | **Required** | `YYYY`, `pastyear`, or `pastmonth`            |
+| `hash`     | `string` | Optional           | `#overview` (Card only), `#viewmapi` (Map only) |
 
 ### 3. Raw Card (Legacy)
+
 Low-level access to the card generator with custom date ranges.
 
 **Endpoint:** `GET /api/card/{username}/{start}/{end}`
 
--   `start` / `end`: Dates in `YYYY-MM-DD` format.
+- `start` / `end`: Dates in `YYYY-MM-DD` format.
 
 ---
 
@@ -159,14 +166,16 @@ npm run dev
 ```
 
 ### Running Together
+
 The backend is configured to serve the frontend static files.
-1.  Build frontend: `cd web && npm run build`
-2.  Run backend: `cd backend && uvicorn app.main:app`
-3.  Access at `http://localhost:8000`
+
+1. Build frontend: `cd web && npm run build`
+2. Run backend: `cd backend && uvicorn app.main:app`
+3. Access at `http://localhost:8000`
 
 ---
 
 ## 📝 Markdown Support
 
--   **Web Version**: Supports **GitHub Flavored Markdown** (Tables, Task lists, Strikethrough, etc.) via `react-markdown`.
--   **Screenshot/Image**: Renders Markdown using the backend's Python renderer. Basic formatting (Bold, Italic, Lists) is supported.
+- **Web Version**: Supports **GitHub Flavored Markdown** (Tables, Task lists, Strikethrough, etc.) via `react-markdown`.
+- **Screenshot/Image**: Renders Markdown using the backend's Python renderer. Basic formatting (Bold, Italic, Lists) is supported.

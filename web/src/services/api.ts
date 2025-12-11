@@ -194,6 +194,11 @@ export interface GeoLocation {
 }
 
 export async function getCurrentLocation(): Promise<GeoLocation | null> {
+  // Skip geolocation in screenshot mode to avoid rate limits and unnecessary API calls
+  if (typeof window !== 'undefined' && window.location.search.includes('screenshot=1')) {
+    return null
+  }
+
   try {
     const response = await fetch('https://ipapi.co/json/')
     if (!response.ok) return null
@@ -206,7 +211,9 @@ export async function getCurrentLocation(): Promise<GeoLocation | null> {
       lat: data.latitude || 0,
       lon: data.longitude || 0,
     }
-  } catch {
+  } catch (e) {
+    // Silent fail for ad-blockers or network issues
+    console.warn('Geolocation failed (likely ad-blocker or rate limit):', e)
     return null
   }
 }

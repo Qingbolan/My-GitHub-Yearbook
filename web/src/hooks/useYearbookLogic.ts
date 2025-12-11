@@ -2,51 +2,42 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams, useLocation } from 'react-router-dom'
 import { getYearbookStats, type YearbookStats } from '../services/api'
 
-export function useYearbookLogic() {
-    const { username, year: yearParam, start, end } = useParams<{ username: string; year?: string; start?: string; end?: string }>()
-    const location = useLocation()
+// Core hook that takes direct arguments
+export function useYearbookStats(
+    username: string | undefined,
+    yearStr: string | undefined,
+    start?: string,
+    end?: string
+) {
     const [data, setData] = useState<YearbookStats | null>(null)
-    const [loading, setLoading] = useState(true)
+    const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
 
     // Helper to resolve period keywords
     let resolvedStart = start
     let resolvedEnd = end
-    let resolvedYear = yearParam ? parseInt(yearParam) : new Date().getFullYear()
-    let explicitTitle = new URLSearchParams(location.search).get('title')
 
-    if (yearParam && ['pastyear', 'pastmonth', 'pastweek'].includes(yearParam.toLowerCase())) {
+    // Default to current year if no year/start provided
+    let resolvedYear = yearStr ? parseInt(yearStr) : new Date().getFullYear()
+
+    if (yearStr && ['pastyear', 'pastmonth', 'pastweek'].includes(yearStr.toLowerCase())) {
         const today = new Date()
         const d = new Date()
-        if (yearParam === 'pastyear') d.setDate(d.getDate() - 365)
-        else if (yearParam === 'pastmonth') d.setDate(d.getDate() - 30)
-        else if (yearParam === 'pastweek') d.setDate(d.getDate() - 7)
+        if (yearStr === 'pastyear') d.setDate(d.getDate() - 365)
+        else if (yearStr === 'pastmonth') d.setDate(d.getDate() - 30)
+        else if (yearStr === 'pastweek') d.setDate(d.getDate() - 7)
 
         resolvedStart = d.toISOString().split('T')[0]
         resolvedEnd = today.toISOString().split('T')[0]
-        // If no title provided, use the friendly param name
-        if (!explicitTitle) {
-            explicitTitle = yearParam.replace('past', 'Past ').replace(/^\w/, c => c.toUpperCase())
-        }
-        // Set year to current year for fallback logic if needed
         resolvedYear = today.getFullYear()
     }
 
     const year = resolvedStart ? parseInt(resolvedStart.slice(0, 4)) : resolvedYear
-    const title = explicitTitle
-
-    const isScreenshot = useMemo(() => {
-        const params = new URLSearchParams(location.search)
-        return params.get('screenshot') === '1'
-    }, [location.search])
-
-    const embed = useMemo(() => {
-        const params = new URLSearchParams(location.search)
-        return params.get('embed') === '1'
-    }, [location.search])
 
     useEffect(() => {
-        if (!username || !year) return
+        if (!username) return
+        setLoading(true)
+        setError('')
         getYearbookStats(username, year, undefined, resolvedStart, resolvedEnd)
             .then(setData)
             .catch(e => setError(e.message))
@@ -131,25 +122,56 @@ export function useYearbookLogic() {
             publicRepos,
             cached: data.cached,
         }
-    }, [data])
+    }, [data, resolvedStart, resolvedEnd, year])
 
-    const yearStr = resolvedStart?.slice(0, 4) || String(resolvedYear)
+    const displayYearStr = resolvedStart?.slice(0, 4) || String(resolvedYear)
     const isCustomRange = !!(resolvedStart && resolvedEnd && !(resolvedStart.endsWith('-01-01') && resolvedEnd.endsWith('-12-31')))
 
     return {
-        username,
-        yearStr,
-        start: resolvedStart,
-        end: resolvedEnd,
         resolvedStart,
         resolvedEnd,
-        title,
+        yearStr: displayYearStr,
         isCustomRange,
-        isScreenshot,
-        embed,
         data,
         loading,
         error,
         stats,
+    }
+}
+
+
+// Router wrapper for existing pages
+export function useYearbookLogic() {
+    const { username, year: yearParam, start, end } = useParams<{ username: string; year?: string; start?: string; end?: string }>()
+    const location = useLocation()
+
+    // Calculate display title from query param or year param
+    let explicitTitle = new URLSearchParams(location.search).get('title')
+
+    if (!explicitTitle && yearParam && ['pastyear', 'pastmonth', 'pastweek'].includes(yearParam.toLowerCase())) {
+        explicitTitle = yearParam.replace('past', 'Past ').replace(/^\w/, c => c.toUpperCase())
+    }
+
+    const isScreenshot = useMemo(() => {
+        const params = new URLSearchParams(location.search)
+        return params.get('screenshot') === '1'
+    }, [location.search])
+
+    const embed = useMemo(() => {
+        const params = new URLSearchParams(location.search)
+        return params.get('embed') === '1'
+    }, [location.search])
+
+    // Use the core hook
+    const logic = useYearbookStats(username, yearParam, start, end)
+
+    return {
+        username,
+        title: explicitTitle,
+        isScreenshot,
+        embed,
+        start,
+        end,
+        ...logic
     }
 }

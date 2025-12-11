@@ -26,6 +26,7 @@ export default function LandingPage() {
   const [end, setEnd] = useState(PRESETS[0].end)
   const [selected, setSelected] = useState(PRESETS[0].label)
   const [showTokenModal, setShowTokenModal] = useState(false)
+  const [showConfig, setShowConfig] = useState(false)
   const [tokenInput, setTokenInput] = useState('')
   const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null)
   const [saving, setSaving] = useState(false)
@@ -33,11 +34,14 @@ export default function LandingPage() {
 
   // Load token info when username changes
   useEffect(() => {
-    if (username.trim()) {
-      getToken(username.trim()).then(setTokenInfo).catch(() => setTokenInfo(null))
-    } else {
-      setTokenInfo(null)
-    }
+    const timer = setTimeout(() => {
+      if (username.trim()) {
+        getToken(username.trim()).then(setTokenInfo).catch(() => setTokenInfo(null))
+      } else {
+        setTokenInfo(null)
+      }
+    }, 500)
+    return () => clearTimeout(timer)
   }, [username])
 
   // Also check localStorage token
@@ -82,87 +86,144 @@ export default function LandingPage() {
     <div className="min-h-screen bg-[#0d1117] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
-        <div className="text-center mb-6">
-          <svg className="w-12 h-12 mx-auto text-white mb-3" viewBox="0 0 24 24" fill="currentColor">
+        <div className="text-center mb-8">
+          <svg className="w-16 h-16 mx-auto text-white mb-4" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
           </svg>
-          <h1 className="text-xl font-semibold text-white">GitHub Yearbook</h1>
-          <p className="text-xs text-[#8b949e] mt-1">Generate your GitHub year in review</p>
+          <h1 className="text-2xl font-bold text-white mb-2">GitHub Yearbook</h1>
+          <p className="text-[#8b949e]">Visualise your year in code</p>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="bg-[#161b22] border border-[#30363d] rounded-md p-4 space-y-4">
-          <div>
-            <label className="text-xs text-[#8b949e] block mb-1">Username</label>
-            <input
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              placeholder="octocat"
-              className="w-full px-3 py-2 bg-[#0d1117] border border-[#30363d] rounded text-sm text-white placeholder-[#484f58] focus:border-[#58a6ff] focus:outline-none"
-            />
-          </div>
+        {/* Main Card */}
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg shadow-xl overflow-hidden">
+          <form onSubmit={handleSubmit} className="p-6 space-y-6">
 
-          <div>
-            <label className="text-xs text-[#8b949e] block mb-1">Period</label>
-            <div className="flex gap-1">
-              {PRESETS.map(p => (
-                <button
-                  key={p.label}
-                  type="button"
-                  onClick={() => { setStart(p.start); setEnd(p.end); setSelected(p.label) }}
-                  className={`flex-1 py-1.5 text-xs rounded transition-colors ${selected === p.label
-                    ? 'bg-[#238636] text-white'
-                    : 'bg-[#21262d] text-[#8b949e] hover:text-white'
-                    }`}
+            {/* Username Input */}
+            <div>
+              <label className="text-xs font-semibold text-[#8b949e] uppercase tracking-wider block mb-2">
+                GitHub Username
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  placeholder="e.g. torvalds"
+                  className="w-full px-4 py-3 bg-[#0d1117] border border-[#30363d] rounded-md text-white placeholder-[#484f58] focus:border-[#58a6ff] focus:ring-1 focus:ring-[#58a6ff] focus:outline-none transition-all"
+                  autoFocus
+                />
+                {/* Status Indicator */}
+                {username && (
+                  <div className="absolute right-3 top-3.5">
+                    {tokenInfo !== null ? (
+                      hasToken ? (
+                        <span className="flex items-center text-[10px] text-[#3fb950] font-medium bg-[#3fb950]/10 px-2 py-0.5 rounded-full border border-[#3fb950]/20">
+                          Include Private
+                        </span>
+                      ) : (
+                        <span className="flex items-center text-[10px] text-[#8b949e] font-medium bg-[#8b949e]/10 px-2 py-0.5 rounded-full border border-[#8b949e]/20">
+                          Public Only
+                        </span>
+                      )
+                    ) : (
+                      <div className="w-4 h-4 border-2 border-[#30363d] border-t-[#58a6ff] rounded-full animate-spin"></div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Configuration Toggle */}
+            <div className="border-t border-[#30363d] pt-4">
+              <button
+                type="button"
+                onClick={() => setShowConfig(!showConfig)}
+                className="flex items-center text-xs text-[#8b949e] hover:text-[#58a6ff] transition-colors w-full justify-between group"
+              >
+                <span>Configuration</span>
+                <svg
+                  className={`w-4 h-4 transform transition-transform ${showConfig ? 'rotate-180' : ''} text-[#8b949e] group-hover:text-[#58a6ff]`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
                 >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
 
-          <button
-            type="submit"
-            disabled={!username.trim()}
-            className="w-full py-2 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white text-sm font-medium rounded transition-colors"
-          >
-            Generate
-          </button>
-
-          {/* Token status indicator */}
-          <div className="flex items-center justify-between text-[10px]">
-            <div className="text-[#484f58]">
-              {hasToken ? (
-                <span className="text-[#3fb950]">● Token configured</span>
-              ) : (
-                <span>Public repos only</span>
-              )}
+              {/* Collapsible Config Area */}
+              <div className={`overflow-hidden transition-all duration-300 ease-in-out ${showConfig ? 'max-h-48 opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs font-semibold text-[#8b949e] uppercase tracking-wider block mb-2">Time Period</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {PRESETS.slice(0, 3).map(p => (
+                        <button
+                          key={p.label}
+                          type="button"
+                          onClick={() => { setStart(p.start); setEnd(p.end); setSelected(p.label) }}
+                          className={`py-2 text-xs rounded border transition-all ${selected === p.label
+                            ? 'bg-[#238636] border-[#238636] text-white shadow-sm'
+                            : 'bg-[#0d1117] border-[#30363d] text-[#8b949e] hover:border-[#8b949e] hover:text-white'
+                            }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      {PRESETS.slice(3).map(p => (
+                        <button
+                          key={p.label}
+                          type="button"
+                          onClick={() => { setStart(p.start); setEnd(p.end); setSelected(p.label) }}
+                          className={`py-2 text-xs rounded border transition-all ${selected === p.label
+                            ? 'bg-[#238636] border-[#238636] text-white shadow-sm'
+                            : 'bg-[#0d1117] border-[#30363d] text-[#8b949e] hover:border-[#8b949e] hover:text-white'
+                            }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
+
+            {/* Submit Button */}
             <button
-              type="button"
-              onClick={() => setShowTokenModal(true)}
-              className="text-[#58a6ff] hover:underline"
+              type="submit"
+              disabled={!username.trim()}
+              className="w-full py-3 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-md shadow-lg transition-all transform active:scale-[0.99]"
             >
-              {hasToken ? 'Manage Token' : 'Add Token'}
+              Preview Yearbook
             </button>
-          </div>
-        </form>
 
-        <p className="text-center text-[10px] text-[#484f58] mt-4">
-          Like <a href="https://github.com/anuraghazra/github-readme-stats" className="text-[#58a6ff] hover:underline">github-readme-stats</a>, but for yearly summaries
-        </p>
+            {/* Token Management Link */}
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => setShowTokenModal(true)}
+                className="text-xs text-[#58a6ff] hover:underline hover:text-[#79c0ff] transition-colors"
+              >
+                {hasToken ? 'Manage Access Token' : 'Add Access Token for Private Repos'}
+              </button>
+            </div>
+
+          </form>
+        </div>
       </div>
 
       {/* Token Modal */}
       {showTokenModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 w-full max-w-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-medium text-white">GitHub Token Settings</h2>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-[#161b22] border border-[#30363d] rounded-xl shadow-2xl p-6 w-full max-w-sm transform transition-all scale-100">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold text-white">Access Token Settings</h2>
               <button
                 onClick={() => setShowTokenModal(false)}
-                className="text-[#8b949e] hover:text-white"
+                className="text-[#8b949e] hover:text-white transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -171,60 +232,63 @@ export default function LandingPage() {
             </div>
 
             {tokenInfo?.exists ? (
-              <div className="space-y-3">
-                <div className="p-3 bg-[#0d1117] rounded border border-[#30363d]">
-                  <div className="text-xs text-[#8b949e] mb-1">Current Token</div>
-                  <div className="text-sm text-white font-mono">{tokenInfo.masked_token}</div>
+              <div className="space-y-4">
+                <div className="p-4 bg-[#0d1117] rounded-lg border border-[#30363d]">
+                  <div className="text-xs text-[#8b949e] uppercase tracking-wider mb-2">Active Token</div>
+                  <div className="text-sm text-white font-mono break-all">{tokenInfo.masked_token}</div>
                   {tokenInfo.token_type && (
-                    <div className="text-xs text-[#8b949e] mt-1">Type: {tokenInfo.token_type}</div>
-                  )}
-                  {tokenInfo.scopes && (
-                    <div className="text-xs text-[#8b949e]">Scopes: {tokenInfo.scopes}</div>
+                    <div className="flex items-center gap-2 mt-3">
+                      <span className="text-[10px] bg-[#1f6feb]/10 text-[#58a6ff] border border-[#1f6feb]/20 px-1.5 py-0.5 rounded uppercase">{tokenInfo.token_type}</span>
+                    </div>
                   )}
                 </div>
                 <button
                   onClick={handleDeleteToken}
-                  className="w-full py-2 bg-[#da3633] hover:bg-[#b62324] text-white text-sm rounded transition-colors"
+                  className="w-full py-2.5 bg-[#da3633] hover:bg-[#b62324] text-white text-sm font-medium rounded-md transition-colors border border-transparent"
                 >
                   Remove Token
                 </button>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div>
-                  <label className="text-xs text-[#8b949e] block mb-1">GitHub Personal Access Token</label>
+                  <label className="text-xs font-semibold text-[#8b949e] block mb-1.5">Personal Access Token</label>
                   <input
                     type="password"
                     value={tokenInput}
                     onChange={e => setTokenInput(e.target.value)}
-                    placeholder="ghp_xxxxxxxxxxxx"
-                    className="w-full px-3 py-2 bg-[#0d1117] border border-[#30363d] rounded text-sm text-white placeholder-[#484f58] focus:border-[#58a6ff] focus:outline-none"
+                    placeholder="ghp_..."
+                    className="w-full px-3 py-2.5 bg-[#0d1117] border border-[#30363d] rounded-md text-sm text-white placeholder-[#484f58] focus:border-[#58a6ff] focus:ring-1 focus:ring-[#58a6ff] focus:outline-none"
                   />
                 </div>
-                <div className="text-xs text-[#8b949e]">
-                  Required scopes: <code className="bg-[#21262d] px-1 rounded">repo</code>, <code className="bg-[#21262d] px-1 rounded">read:org</code>
+                <div className="text-xs text-[#8b949e] leading-relaxed">
+                  Required scopes: <code className="bg-[#21262d] px-1 py-0.5 rounded border border-[#30363d] text-[#c9d1d9]">repo</code>, <code className="bg-[#21262d] px-1 py-0.5 rounded border border-[#30363d] text-[#c9d1d9]">read:org</code>
                 </div>
                 <button
                   onClick={handleSaveToken}
                   disabled={!tokenInput.trim() || !username.trim() || saving}
-                  className="w-full py-2 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white text-sm rounded transition-colors"
+                  className="w-full py-2.5 bg-[#238636] hover:bg-[#2ea043] disabled:opacity-50 text-white text-sm font-semibold rounded-md transition-colors shadow-sm"
                 >
-                  {saving ? 'Saving...' : 'Save Token'}
+                  {saving ? 'Verifying & Saving...' : 'Save Token'}
                 </button>
                 {!username.trim() && (
-                  <div className="text-xs text-[#f85149]">Please enter your username first</div>
+                  <div className="text-xs text-[#f85149] flex items-center gap-1">
+                    <svg className="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M4.47.22A.75.75 0 0 1 5 0h6a.75.75 0 0 1 .53.22l4.25 4.25c.141.14.22.331.22.53v6a.75.75 0 0 1-.22.53l-4.25 4.25A.75.75 0 0 1 11 16H5a.75.75 0 0 1-.53-.22L.22 11.53A.75.75 0 0 1 0 11V5a.75.75 0 0 1 .22-.53L4.47.22Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5H5.31ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z" /></svg>
+                    Please enter a username first
+                  </div>
                 )}
               </div>
             )}
 
-            <div className="mt-4 pt-3 border-t border-[#30363d] text-xs text-[#8b949e]">
+            <div className="mt-6 pt-4 border-t border-[#30363d] text-center">
               <a
                 href="https://github.com/settings/tokens/new?scopes=repo,read:org"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[#58a6ff] hover:underline"
+                className="text-xs text-[#58a6ff] hover:text-[#79c0ff] hover:underline inline-flex items-center gap-1"
               >
-                Create a new token on GitHub
+                Create new token on GitHub
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
             </div>
           </div>
