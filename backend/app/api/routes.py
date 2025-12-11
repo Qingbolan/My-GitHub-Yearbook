@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import quote
 from playwright.async_api import async_playwright
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
@@ -637,6 +637,29 @@ def generate_stats_svg(stats: YearbookStats) -> str:
 
 
 
+def parse_period(period: str) -> tuple[str, str]:
+    """Parse period string into start and end dates."""
+    today = datetime.utcnow().date()
+    if period == "pastyear":
+        start = today - timedelta(days=365)
+        return start.isoformat(), today.isoformat()
+    elif period == "pastmonth":
+        start = today - timedelta(days=30)
+        return start.isoformat(), today.isoformat()
+    elif period.isdigit() and len(period) == 4:
+        return f"{period}-01-01", f"{period}-12-31"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid period. Use YYYY, 'pastyear', or 'pastmonth'.")
+
+
+@router.get("/embed/{username}/{period}")
+async def get_embed(username: str, period: str):
+    """Redirect to embeddable frontend view."""
+    start, end = parse_period(period)
+    # Redirect to the frontend route with embed=1
+    return RedirectResponse(f"/yearbook/{username}/{start}/{end}?embed=1&screenshot=1")
+
+
 @router.get("/card/{username}/{start}/{end}")
 async def get_stats_card(
     username: str,
@@ -649,16 +672,15 @@ async def get_stats_card(
     return await generate_screenshot(username, start, end, width)
 
 
-@router.get("/screenshot/{username}/{year}")
+@router.get("/screenshot/{username}/{period}")
 async def get_screenshot(
     username: str,
-    year: int,
+    period: str,
     width: int = 1280,
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate PNG screenshot for a full year."""
-    start = f"{year}-01-01"
-    end = f"{year}-12-31"
+    """Generate PNG screenshot for a period."""
+    start, end = parse_period(period)
     return await generate_screenshot(username, start, end, width)
 
 

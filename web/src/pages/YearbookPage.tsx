@@ -25,6 +25,9 @@ export default function YearbookPage() {
     return params.get('embed') === '1'
   }, [location.search])
 
+  const showOverview = !location.hash || location.hash === '#overview'
+  const showMap = !location.hash || location.hash === '#viewmapi'
+
   useEffect(() => {
     if (!username || !year) return
     // Use backend API with caching - no need for token on frontend
@@ -165,212 +168,214 @@ export default function YearbookPage() {
         )}
 
         {/* Main Card */}
-        <div id="yearbook-card" ref={cardRef} className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg overflow-hidden mb-6">
-          {/* Header with profile */}
-          <div className="p-4 border-b border-[#21262d] flex items-center gap-4">
-            {stats.avatarUrl && (
-              <img src={stats.avatarUrl} alt={username} className="w-14 h-14 rounded-full border-2 border-[#30363d]" />
-            )}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-lg font-bold text-white">{username}</span>
-                <span className="text-xs text-[#8b949e] bg-[#21262d] px-2 py-0.5 rounded">{yearStr}</span>
-                {stats.organizations.length > 0 && (
-                  <div className="flex -space-x-2">
-                    {stats.organizations.map(org => (
-                      <img
-                        key={org.login}
-                        src={org.avatarUrl}
-                        alt={org.login}
-                        title={org.login}
-                        className="w-6 h-6 rounded-full border-2 border-[#0d1117]"
+        {showOverview && (
+          <div id="yearbook-card" ref={cardRef} className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg overflow-hidden mb-6">
+            {/* Header with profile */}
+            <div className="p-4 border-b border-[#21262d] flex items-center gap-4">
+              {stats.avatarUrl && (
+                <img src={stats.avatarUrl} alt={username} className="w-14 h-14 rounded-full border-2 border-[#30363d]" />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-lg font-bold text-white">{username}</span>
+                  <span className="text-xs text-[#8b949e] bg-[#21262d] px-2 py-0.5 rounded">{yearStr}</span>
+                  {stats.organizations.length > 0 && (
+                    <div className="flex -space-x-2">
+                      {stats.organizations.map(org => (
+                        <img
+                          key={org.login}
+                          src={org.avatarUrl}
+                          alt={org.login}
+                          title={org.login}
+                          className="w-6 h-6 rounded-full border-2 border-[#0d1117]"
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {stats.bio && (
+                  <div className="text-xs text-[#8b949e] mt-0.5 [&_a]:text-[#58a6ff] [&_a]:hover:underline [&_p]:my-0.5">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" />
+                      }}
+                    >
+                      {stats.bio}
+                    </ReactMarkdown>
+                  </div>
+                )}
+                <div className="flex gap-3 mt-1 text-xs text-[#8b949e]">
+                  {stats.company && <span>{stats.company}</span>}
+                  {stats.location && <span>{stats.location}</span>}
+                  {stats.followers > 0 && <span>{stats.followers.toLocaleString()} followers</span>}
+                </div>
+              </div>
+            </div>
+
+            {/* Core Stats Row */}
+            <div className="grid grid-cols-4 md:grid-cols-8 border-b border-[#21262d] text-center">
+              <StatCell label="Contributions" value={stats.total.toLocaleString()} color="#3fb950" />
+              <StatCell label="Commits" value={stats.commits.toLocaleString()} color="#58a6ff" />
+              <StatCell label="PRs" value={String(stats.prs)} color="#a371f7" />
+              <StatCell label="Reviews" value={String(stats.reviews)} color="#f0883e" />
+              <StatCell label="Issues" value={String(stats.issues)} color="#3fb950" />
+              <StatCell label="Repos" value={`${stats.publicRepoCount}+${stats.privateRepoCount}`} color="#58a6ff" sub="pub+priv" />
+              <StatCell label="Best Streak" value={`${stats.longest}d`} color="#f97316" />
+              <StatCell label="Active Days" value={String(stats.activeDays)} color="#3fb950" />
+            </div>
+
+            {/* Activity + Languages + Stats */}
+            <div className="grid lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-[#21262d]">
+              {/* Left: Activity Graph + Day distribution */}
+              <div className="p-4 space-y-4">
+                <Section title="52-Week Activity">
+                  <div className="flex gap-px h-10 rounded overflow-hidden bg-[#161b22]">
+                    {stats.weeks.map((w, i) => (
+                      <div
+                        key={i}
+                        className="flex-1"
+                        style={{ backgroundColor: w ? `rgba(63,185,80,${0.2 + (w / stats.maxW) * 0.8})` : 'transparent' }}
+                        title={`Week ${i + 1}: ${w}`}
                       />
                     ))}
                   </div>
-                )}
-              </div>
-              {stats.bio && (
-                <div className="text-xs text-[#8b949e] mt-0.5 [&_a]:text-[#58a6ff] [&_a]:hover:underline [&_p]:my-0.5">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" />
-                    }}
-                  >
-                    {stats.bio}
-                  </ReactMarkdown>
-                </div>
-              )}
-              <div className="flex gap-3 mt-1 text-xs text-[#8b949e]">
-                {stats.company && <span>{stats.company}</span>}
-                {stats.location && <span>{stats.location}</span>}
-                {stats.followers > 0 && <span>{stats.followers.toLocaleString()} followers</span>}
-              </div>
-            </div>
-          </div>
+                </Section>
 
-          {/* Core Stats Row */}
-          <div className="grid grid-cols-4 md:grid-cols-8 border-b border-[#21262d] text-center">
-            <StatCell label="Contributions" value={stats.total.toLocaleString()} color="#3fb950" />
-            <StatCell label="Commits" value={stats.commits.toLocaleString()} color="#58a6ff" />
-            <StatCell label="PRs" value={String(stats.prs)} color="#a371f7" />
-            <StatCell label="Reviews" value={String(stats.reviews)} color="#f0883e" />
-            <StatCell label="Issues" value={String(stats.issues)} color="#3fb950" />
-            <StatCell label="Repos" value={`${stats.publicRepoCount}+${stats.privateRepoCount}`} color="#58a6ff" sub="pub+priv" />
-            <StatCell label="Best Streak" value={`${stats.longest}d`} color="#f97316" />
-            <StatCell label="Active Days" value={String(stats.activeDays)} color="#3fb950" />
-          </div>
-
-          {/* Activity + Languages + Stats */}
-          <div className="grid lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-[#21262d]">
-            {/* Left: Activity Graph + Day distribution */}
-            <div className="p-4 space-y-4">
-              <Section title="52-Week Activity">
-                <div className="flex gap-px h-10 rounded overflow-hidden bg-[#161b22]">
-                  {stats.weeks.map((w, i) => (
-                    <div
-                      key={i}
-                      className="flex-1"
-                      style={{ backgroundColor: w ? `rgba(63,185,80,${0.2 + (w / stats.maxW) * 0.8})` : 'transparent' }}
-                      title={`Week ${i + 1}: ${w}`}
-                    />
-                  ))}
-                </div>
-              </Section>
-
-              <Section title="Day of Week">
-                <div className="space-y-1">
-                  {dayNames.map((day, i) => (
-                    <div key={day} className="flex items-center gap-2 text-xs">
-                      <span className="w-7 text-[#8b949e]">{day}</span>
-                      <div className="flex-1 h-3 bg-[#161b22] rounded overflow-hidden">
-                        <div className="h-full bg-[#238636]" style={{ width: `${(stats.dayOfWeek[i] / stats.maxDay) * 100}%` }} />
-                      </div>
-                      <span className="w-10 text-right text-[#8b949e]">{stats.dayOfWeek[i]}</span>
-                    </div>
-                  ))}
-                </div>
-              </Section>
-
-              <Section title="Highlights">
-                <div className="space-y-1 text-xs">
-                  <Row label="Current Streak" value={`${stats.current} days`} />
-                  <Row label="Avg per Day" value={`${stats.avgPerDay}`} />
-                  {stats.maxDayEntry && <Row label="Best Day" value={`${stats.maxDayEntry.date} (${stats.maxDayEntry.count})`} />}
-                  {stats.organizations.length > 0 && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-[#8b949e]">Organizations</span>
-                      <div className="flex -space-x-1">
-                        {stats.organizations.map(org => (
-                          <img
-                            key={org.login}
-                            src={org.avatarUrl}
-                            alt={org.login}
-                            title={org.login}
-                            className="w-4 h-4 rounded-full border border-[#161b22]"
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </Section>
-            </div>
-
-            {/* Middle: Full Tech Stack */}
-            <div className="p-4 space-y-4">
-              <Section title={`Tech Stack (${stats.languageStats.length} Languages)`}>
-                {/* Stacked bar */}
-                <div className="h-4 rounded-full overflow-hidden flex mb-3">
-                  {topLangs.map(lang => (
-                    <div
-                      key={lang.name}
-                      style={{ width: `${lang.percentage}%`, backgroundColor: lang.color }}
-                      title={`${lang.name}: ${lang.percentage.toFixed(1)}%`}
-                    />
-                  ))}
-                  {otherSize > 0 && (
-                    <div
-                      style={{ width: `${(otherSize / totalSize) * 100}%`, backgroundColor: '#484f58' }}
-                      title={`Other: ${((otherSize / totalSize) * 100).toFixed(1)}%`}
-                    />
-                  )}
-                </div>
-
-                {/* Full language list */}
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                  {stats.languageStats.slice(0, 12).map(lang => (
-                    <div key={lang.name} className="flex items-center gap-1.5 text-xs">
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lang.color }} />
-                      <span className="text-[#c9d1d9] truncate flex-1">{lang.name}</span>
-                      <span className="text-[#58a6ff]">{lang.percentage.toFixed(1)}%</span>
-                    </div>
-                  ))}
-                </div>
-                {stats.languageStats.length > 12 && (
-                  <p className="text-[10px] text-[#484f58] mt-2">+{stats.languageStats.length - 12} more languages</p>
-                )}
-              </Section>
-
-              {/* Language Usage Section */}
-              <Section title="Language Usage (by Repos)">
-                <div className="space-y-2">
-                  {stats.languageStats.slice(0, 6).map((lang) => (
-                    <div key={lang.name} className="space-y-1">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-[#c9d1d9]">{lang.name}</span>
-                        <span className="text-[#8b949e]">{lang.repoCount} repos</span>
-                      </div>
-                      <div className="h-2 bg-[#161b22] rounded overflow-hidden">
-                        <div
-                          className="h-full rounded"
-                          style={{
-                            width: `${lang.percentage}%`,
-                            backgroundColor: lang.color || '#8b949e'
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Section>
-            </div>
-
-            {/* Right: Repositories */}
-            <div className="p-4 space-y-4">
-              <Section title={`Top Repositories (${stats.repoCount} contributed)`}>
-                <div className="space-y-2 max-h-full overflow-y-auto">
-                  {displayRepos.map((repo) => (
-                    <RepoCard key={repo.fullName || repo.repo} repo={repo} />
-                  ))}
-                </div>
-              </Section>
-
-              {displayPrivateRepos.length > 0 && (
-                <Section title={`Private Repos (${stats.privateRepos.length})`}>
-                  <div className="space-y-1.5">
-                    {displayPrivateRepos.map(repo => (
-                      <div key={repo.fullName || repo.repo} className="flex items-center gap-2 text-xs p-1.5 bg-[#161b22] rounded">
-                        <span className="text-[#f0883e]">Private</span>
-                        <span className="text-[#c9d1d9] truncate flex-1">{repo.repo}</span>
-                        <span className="text-[#3fb950]">{repo.count} commits</span>
+                <Section title="Day of Week">
+                  <div className="space-y-1">
+                    {dayNames.map((day, i) => (
+                      <div key={day} className="flex items-center gap-2 text-xs">
+                        <span className="w-7 text-[#8b949e]">{day}</span>
+                        <div className="flex-1 h-3 bg-[#161b22] rounded overflow-hidden">
+                          <div className="h-full bg-[#238636]" style={{ width: `${(stats.dayOfWeek[i] / stats.maxDay) * 100}%` }} />
+                        </div>
+                        <span className="w-10 text-right text-[#8b949e]">{stats.dayOfWeek[i]}</span>
                       </div>
                     ))}
-                    {!isScreenshot && stats.privateRepos.length > 4 && (
-                      <p className="text-[10px] text-[#484f58]">+{stats.privateRepos.length - 4} more private repos</p>
+                  </div>
+                </Section>
+
+                <Section title="Highlights">
+                  <div className="space-y-1 text-xs">
+                    <Row label="Current Streak" value={`${stats.current} days`} />
+                    <Row label="Avg per Day" value={`${stats.avgPerDay}`} />
+                    {stats.maxDayEntry && <Row label="Best Day" value={`${stats.maxDayEntry.date} (${stats.maxDayEntry.count})`} />}
+                    {stats.organizations.length > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-[#8b949e]">Organizations</span>
+                        <div className="flex -space-x-1">
+                          {stats.organizations.map(org => (
+                            <img
+                              key={org.login}
+                              src={org.avatarUrl}
+                              alt={org.login}
+                              title={org.login}
+                              className="w-4 h-4 rounded-full border border-[#161b22]"
+                            />
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </Section>
-              )}
+              </div>
+
+              {/* Middle: Full Tech Stack */}
+              <div className="p-4 space-y-4">
+                <Section title={`Tech Stack (${stats.languageStats.length} Languages)`}>
+                  {/* Stacked bar */}
+                  <div className="h-4 rounded-full overflow-hidden flex mb-3">
+                    {topLangs.map(lang => (
+                      <div
+                        key={lang.name}
+                        style={{ width: `${lang.percentage}%`, backgroundColor: lang.color }}
+                        title={`${lang.name}: ${lang.percentage.toFixed(1)}%`}
+                      />
+                    ))}
+                    {otherSize > 0 && (
+                      <div
+                        style={{ width: `${(otherSize / totalSize) * 100}%`, backgroundColor: '#484f58' }}
+                        title={`Other: ${((otherSize / totalSize) * 100).toFixed(1)}%`}
+                      />
+                    )}
+                  </div>
+
+                  {/* Full language list */}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                    {stats.languageStats.slice(0, 12).map(lang => (
+                      <div key={lang.name} className="flex items-center gap-1.5 text-xs">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lang.color }} />
+                        <span className="text-[#c9d1d9] truncate flex-1">{lang.name}</span>
+                        <span className="text-[#58a6ff]">{lang.percentage.toFixed(1)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                  {stats.languageStats.length > 12 && (
+                    <p className="text-[10px] text-[#484f58] mt-2">+{stats.languageStats.length - 12} more languages</p>
+                  )}
+                </Section>
+
+                {/* Language Usage Section */}
+                <Section title="Language Usage (by Repos)">
+                  <div className="space-y-2">
+                    {stats.languageStats.slice(0, 6).map((lang) => (
+                      <div key={lang.name} className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-[#c9d1d9]">{lang.name}</span>
+                          <span className="text-[#8b949e]">{lang.repoCount} repos</span>
+                        </div>
+                        <div className="h-2 bg-[#161b22] rounded overflow-hidden">
+                          <div
+                            className="h-full rounded"
+                            style={{
+                              width: `${lang.percentage}%`,
+                              backgroundColor: lang.color || '#8b949e'
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+              </div>
+
+              {/* Right: Repositories */}
+              <div className="p-4 space-y-4">
+                <Section title={`Top Repositories (${stats.repoCount} contributed)`}>
+                  <div className="space-y-2 max-h-full overflow-y-auto">
+                    {displayRepos.map((repo) => (
+                      <RepoCard key={repo.fullName || repo.repo} repo={repo} />
+                    ))}
+                  </div>
+                </Section>
+
+                {displayPrivateRepos.length > 0 && (
+                  <Section title={`Private Repos (${stats.privateRepos.length})`}>
+                    <div className="space-y-1.5">
+                      {displayPrivateRepos.map(repo => (
+                        <div key={repo.fullName || repo.repo} className="flex items-center gap-2 text-xs p-1.5 bg-[#161b22] rounded">
+                          <span className="text-[#f0883e]">Private</span>
+                          <span className="text-[#c9d1d9] truncate flex-1">{repo.repo}</span>
+                          <span className="text-[#3fb950]">{repo.count} commits</span>
+                        </div>
+                      ))}
+                      {!isScreenshot && stats.privateRepos.length > 4 && (
+                        <p className="text-[10px] text-[#484f58]">+{stats.privateRepos.length - 4} more private repos</p>
+                      )}
+                    </div>
+                  </Section>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-4 py-2 bg-[#161b22] border-t border-[#21262d] flex justify-between text-[10px] text-[#484f58]">
+              <span>github-yearbook</span>
+              <span>Generated {new Date().toLocaleDateString()}</span>
             </div>
           </div>
-
-          {/* Footer */}
-          <div className="px-4 py-2 bg-[#161b22] border-t border-[#21262d] flex justify-between text-[10px] text-[#484f58]">
-            <span>github-yearbook</span>
-            <span>Generated {new Date().toLocaleDateString()}</span>
-          </div>
-        </div>
+        )}
 
         {/* Embed Code */}
         {!embed && !isScreenshot && (
@@ -383,7 +388,7 @@ export default function YearbookPage() {
         )}
 
         {/* Visitor Map */}
-        {(!embed || isScreenshot) && (
+        {(!embed || isScreenshot) && showMap && (
           <div className="mb-6">
             <VisitorMap />
           </div>
