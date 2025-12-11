@@ -32,7 +32,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: web
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Build
         working-directory: web
@@ -40,6 +40,7 @@ jobs:
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           VITE_GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
