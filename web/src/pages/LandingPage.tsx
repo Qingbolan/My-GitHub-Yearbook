@@ -108,7 +108,7 @@ export default function LandingPage() {
                   type="text"
                   value={username}
                   onChange={e => setUsername(e.target.value)}
-                  placeholder="e.g. torvalds"
+                  placeholder="e.g. Qingbolan"
                   className="w-full px-4 py-3 bg-[#0d1117] border border-[#30363d] rounded-md text-white placeholder-[#484f58] focus:border-[#58a6ff] focus:ring-1 focus:ring-[#58a6ff] focus:outline-none transition-all"
                   autoFocus
                 />
@@ -171,7 +171,7 @@ export default function LandingPage() {
                         </button>
                       ))}
                     </div>
-                    <div className="grid grid-cols-2 gap-2 mt-2">
+                    <div className="grid grid-cols-3 gap-2 mt-2">
                       {PRESETS.slice(3).map(p => (
                         <button
                           key={p.label}
@@ -185,6 +185,38 @@ export default function LandingPage() {
                           {p.label}
                         </button>
                       ))}
+                      <button
+                        type="button"
+                        onClick={() => setSelected('Custom')}
+                        className={`py-2 text-xs rounded border transition-all ${selected === 'Custom'
+                          ? 'bg-[#238636] border-[#238636] text-white shadow-sm'
+                          : 'bg-[#0d1117] border-[#30363d] text-[#8b949e] hover:border-[#8b949e] hover:text-white'
+                          }`}
+                      >
+                        Custom
+                      </button>
+                    </div>
+
+                    {/* Custom Date Inputs */}
+                    <div className={`grid grid-cols-2 gap-3 mt-3 transition-all duration-300 ${selected === 'Custom' ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
+                      <div>
+                        <label className="text-[10px] uppercase text-[#8b949e] font-semibold mb-1 block">Start Date</label>
+                        <input
+                          type="date"
+                          value={start}
+                          onChange={(e) => setStart(e.target.value)}
+                          className="w-full bg-[#0d1117] border border-[#30363d] rounded px-2 py-1.5 text-xs text-white focus:border-[#58a6ff] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase text-[#8b949e] font-semibold mb-1 block">End Date</label>
+                        <input
+                          type="date"
+                          value={end}
+                          onChange={(e) => setEnd(e.target.value)}
+                          className="w-full bg-[#0d1117] border border-[#30363d] rounded px-2 py-1.5 text-xs text-white focus:border-[#58a6ff] focus:outline-none"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
