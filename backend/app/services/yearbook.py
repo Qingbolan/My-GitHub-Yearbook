@@ -12,6 +12,7 @@ from .filters import FilterStrategy, DateRangeFilter, YearFilter
 logger = logging.getLogger(__name__)
 
 from ..repositories import TokenRepository, StatsRepository, UserRepository
+from ..core.database import async_session
 
 class YearbookService:
     def __init__(self, db: AsyncSession, provider: DataProvider = None):
@@ -87,20 +88,107 @@ class YearbookService:
                 # Fallback to original raw fetch if date parsing fails (unlikely)
                 pass
 
-        # 2. Try Cache (Only for Standard Year)
+        # 2. Stale-While-Revalidate Cache Strategy
+        # Return cached data immediately, trigger background refresh if stale
         if not is_custom_range and not force_refresh:
-            cached = await self._get_cached_stats(username, year)
-            if cached:
-                return cached
+            cached_result = await self._get_cached_stats_with_revalidate(
+                username, year, token, target_start, target_end
+            )
+            if cached_result:
+                return cached_result
 
-        # 3. Resolve Token
+        # 3. No cache or force refresh - fetch fresh data
+        return await self._fetch_and_cache_stats(
+            username, year, token, target_start, target_end, is_custom_range
+        )
+
+    async def _get_cached_stats_with_revalidate(
+        self,
+        username: str,
+        year: int,
+        token: Optional[str],
+        target_start: str,
+        target_end: str
+    ) -> Optional[dict]:
+        """
+        Stale-while-revalidate strategy:
+        - Always return cached data if exists (for fast response)
+        - Trigger background refresh if cache is stale
+        """
+        cached = await self.stats_repo.get_cached(username, year)
+        if not cached:
+            return None
+
+        current_year = datetime.utcnow().year
+        is_past_year = year < current_year
+
+        # Stale threshold: 1 hour for current year, 7 days for past years
+        stale_threshold = timedelta(days=7) if is_past_year else timedelta(hours=1)
+        # Hard expiry: 30 days for past years, 24 hours for current year
+        hard_expiry = timedelta(days=30) if is_past_year else timedelta(hours=24)
+
+        cache_age = datetime.utcnow() - cached.updated_at
+
+        # If cache is within stale threshold, return as fresh
+        if cache_age < stale_threshold:
+            return self._model_to_dict(cached, is_cached=True)
+
+        # If cache is stale but not expired, return it and trigger background refresh
+        if cache_age < hard_expiry:
+            # Schedule background refresh (fire and forget)
+            asyncio.create_task(
+                self._background_refresh(username, year, token, target_start, target_end)
+            )
+            result = self._model_to_dict(cached, is_cached=True)
+            result['stale'] = True  # Mark as stale so frontend knows
+            return result
+
+        # Cache is expired, delete it and return None to force fresh fetch
+        await self.stats_repo.delete(cached)
+        return None
+
+    async def _background_refresh(
+        self,
+        username: str,
+        year: int,
+        token: Optional[str],
+        target_start: str,
+        target_end: str
+    ):
+        """Background task to refresh cache without blocking the response.
+
+        Creates its own database session to avoid conflicts with the main request.
+        """
+        try:
+            logger.info(f"Background refresh started for {username}/{year}")
+            # Create a new database session for background task
+            async with async_session() as db:
+                bg_service = YearbookService(db, self.provider)
+                await bg_service._fetch_and_cache_stats(
+                    username, year, token, target_start, target_end, is_custom_range=False
+                )
+            logger.info(f"Background refresh completed for {username}/{year}")
+        except Exception as e:
+            logger.error(f"Background refresh failed for {username}/{year}: {e}")
+
+    async def _fetch_and_cache_stats(
+        self,
+        username: str,
+        year: int,
+        token: Optional[str],
+        target_start: str,
+        target_end: str,
+        is_custom_range: bool
+    ) -> dict:
+        """Fetch fresh data from GitHub and cache it."""
+        # Resolve Token
         if not token:
             token_obj = await self.token_repo.get_by_username(username)
             token = token_obj.github_token if token_obj else None
 
-        # 4. Fetch Raw Data
+        # Fetch Raw Data
         raw_data = await self.provider.fetch_contributions(username, target_start, target_end, token)
-        
+
         # Ensure User Record Exists (Auto-Create)
         await self.user_repo.create_or_update(
             username=raw_data.get("username", username),
@@ -112,42 +200,24 @@ class YearbookService:
             following=raw_data.get("following", 0),
             public_repos=raw_data.get("publicRepos", 0)
         )
-        
-        # 5. Apply Filters (Validation/Enforcement)
+
+        # Apply Filters (Validation/Enforcement)
         if is_custom_range:
             strategy = DateRangeFilter(target_start, target_end)
         else:
             strategy = YearFilter(year)
-            
+
         filtered_data = strategy.apply(raw_data)
-        
-        # 6. Process Statistics
+
+        # Process Statistics
         stats_model = self._process_stats(username, year, filtered_data)
-        
-        # 7. Save to Cache (Only for Standard Year)
+
+        # Save to Cache (Only for Standard Year)
         if not is_custom_range:
             await self._save_to_cache(stats_model)
             return self._model_to_dict(stats_model)
         else:
-            # Should not happen with Smart Merge, but as fallback
             return self._model_to_dict(stats_model, is_cached=False)
-
-    async def _get_cached_stats(self, username: str, year: int) -> Optional[dict]:
-        cached = await self.stats_repo.get_cached(username, year)
-        if cached:
-            # TTL Logic
-            current_year = datetime.utcnow().year
-            is_past_year = year < current_year
-            
-            # If past year, cache is valid for 30 days (essentially "forever" relative to session)
-            # If current year, cache is valid for 24 hours
-            ttl = timedelta(days=30) if is_past_year else timedelta(hours=24)
-            
-            if datetime.utcnow() - cached.updated_at < ttl:
-                return self._model_to_dict(cached, is_cached=True)
-            else:
-                await self.stats_repo.delete(cached)
-        return None
 
     def _merge_stats_dicts(self, stats_list: List[dict], start: str, end: str) -> dict:
         """Merge multiple yearly stats dicts into one custom range dict."""
