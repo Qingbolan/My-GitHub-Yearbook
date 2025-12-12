@@ -240,7 +240,12 @@ class YearbookService:
                 key = r.get('repo') or r.get('name')
                 if key:
                     all_repos[key] = r
-        merged_repos = list(all_repos.values())
+        # Sort merged repos by commit count (descending), then by stars as secondary sort
+        merged_repos = sorted(
+            all_repos.values(),
+            key=lambda x: (x.get('count', 0), x.get('stars', 0)),
+            reverse=True
+        )
 
         # Update base
         base['totalContributions'] = total
